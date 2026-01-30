@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>สร้าง Magic Card - Line Flex Message Builder</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h2>สร้าง Magic Card</h2>
+            <div class="user-info">
+                <span id="username"></span>
+                <a href="/my-cards" class="btn btn-secondary btn-sm">ดูการ์ดทั้งหมด</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="alert alert-error" id="errorAlert"></div>
+            <div class="alert alert-success" id="successAlert"></div>
+
+            <!-- Step 1: Select Template -->
+            <div id="step1">
+                <h2 style="margin-bottom: 20px;">1. เลือก Template</h2>
+                <div class="template-grid" id="templateGrid">
+                    <div class="text-center" style="grid-column: 1 / -1;">
+                        <div class="loading"></div>
+                        <p>กำลังโหลด Templates...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Fill Form -->
+            <div id="step2" style="display: none;">
+                <h2 style="margin-bottom: 20px;">กรอกข้อมูล</h2>
+                
+                <div class="form-preview-container">
+                    <div class="form-section">
+                        <form id="cardForm">
+                            <!-- Card 1 Section: ข้อมูลติดต่อ -->
+                            <div class="card-section">
+                                <h3 class="card-section-title">
+                                    <span class="card-number">1</span>
+                                    การ์ดข้อมูลติดต่อ
+                                </h3>
+                                
+                                <div class="form-group">
+                                    <label for="name">ชื่อ *</label>
+                                    <input type="text" id="name" name="name" required placeholder="กรอกชื่อ-นามสกุล">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="phone">Tel.</label>
+                                    <input type="tel" id="phone" name="phone" placeholder="เบอร์โทรศัพท์" maxlength="10" inputmode="numeric" pattern="[0-9]*" title="ไม่เกิน 10 หลัก">
+                                    <small class="form-hint">ไม่เกิน 10 หลัก</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="email">Email</label>
+                                    <input type="email" id="email" name="email" placeholder="อีเมล">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="description">รายละเอียด</label>
+                                    <textarea id="description" name="description" rows="3" placeholder="กรอกรายละเอียดสำหรับการ์ดข้อมูลติดต่อ..."></textarea>
+                                </div>
+                            </div>
+
+                            <div class="card-section">
+                                <h3 class="card-section-title">
+                                    <span class="card-number">📷</span>
+                                    รูปภาพ
+                                </h3>
+                                <div class="form-group">
+                                    <label for="image1">อัพโหลดรูปภาพ</label>
+                                    <input type="file" id="image1" name="image1" accept="image/*">
+                                    <small class="form-hint">รูปภาพสำหรับการ์ดแรก (การ์ดอื่นใช้ดีไซน์ที่ออกแบบไว้)</small>
+                                    <div class="image-preview" id="imagePreview1" style="display: none;">
+                                        <img id="previewImg1" src="" alt="Preview Card 1">
+                                        <div class="file-info" id="fileInfo1"></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- ส่วนแสดงภาพตัวอย่างการ์ดจริง (ไม่แสดงข้อความ "ดูได้เฉยๆ") -->
+                                <div class="form-group" style="margin-top: 20px;">
+                                    <label>ตัวอย่างภาพการ์ดจริง</label>
+                                    <div class="card-example-preview" style="margin-top: 10px; border: 2px solid var(--border-color); border-radius: 8px; padding: 15px; background: var(--bg-color); text-align: center;">
+                                        <img id="cardExampleImage" src="" alt="ตัวอย่างภาพการ์ด" style="max-width: 100%; height: auto; border-radius: 8px; display: none;">
+                                        <div id="cardExamplePlaceholder" style="padding: 40px; color: var(--text-light);">
+                                            <span style="font-size: 2rem;">📷</span>
+                                            <p style="margin-top: 10px;">ตัวอย่างภาพการ์ด</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" class="btn btn-secondary" onclick="goBackToStep1()">ย้อนกลับ</button>
+                                <button type="submit" class="btn btn-primary" id="createBtn" style="flex: 1;">
+                                    สร้าง Magic Card
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Preview Section — แสดงเฉพาะการ์ดแรก (การ์ดที่ 2–4 ใช้ดีไซน์ใน template) -->
+                    <div class="preview-section">
+                        <h3 style="margin-bottom: 15px; color: var(--text-color);">📱 ตัวอย่างการ์ด</h3>
+                        <div class="single-preview-container">
+                            <div class="flex-preview-card preview-card-1" id="previewCard1">
+                                <div class="preview-hero" id="previewHero1">
+                                    <img id="previewHeroImg1" src="" alt="Preview" style="display: none;">
+                                    <div class="preview-placeholder" id="previewPlaceholder1">
+                                        <span>📷</span>
+                                        <p>อัพโหลดรูปภาพ</p>
+                                    </div>
+                                </div>
+                                <div class="preview-body">
+                                    <div class="preview-name" id="previewName1">name</div>
+                                    <div class="preview-separator"></div>
+                                    <div class="preview-field">
+                                        <div class="preview-field-label">Tel.</div>
+                                        <div class="preview-field-value" id="previewPhone1"></div>
+                                    </div>
+                                    <div class="preview-field">
+                                        <div class="preview-field-label">Email</div>
+                                        <div class="preview-field-value" id="previewEmail1"></div>
+                                    </div>
+                                    <div class="preview-separator"></div>
+                                    <div class="preview-field-value" id="previewDescription1" style="margin-top: 10px;">description</div>
+                                </div>
+                                <div class="preview-footer">
+                                    <div class="preview-footer-row">
+                                        <button class="preview-btn preview-btn-primary">โทร</button>
+                                        <button class="preview-btn preview-btn-secondary">ส่งอีเมล</button>
+                                    </div>
+                                    <div class="preview-footer-row preview-footer-row-share">
+                                        <button class="preview-btn preview-btn-share">แชร์</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Success -->
+            <div id="step3" style="display: none;">
+                <div class="text-center">
+                    <h2 style="color: var(--success); margin-bottom: 20px;">✅ สร้างการ์ดสำเร็จ!</h2>
+                    
+                    <div class="link-display">
+                        <label>ลิงค์ LIFF URL:</label>
+                        <input type="text" id="liffUrl" readonly>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: center; margin: 20px 0;">
+                        <button class="btn btn-primary" onclick="copyLink()">คัดลอกลิงค์</button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: center; margin-top: 30px;">
+                        <a href="/my-cards" class="btn btn-secondary">ดูการ์ดทั้งหมด</a>
+                        <button class="btn btn-primary" onclick="createNew()">สร้างการ์ดใหม่</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedTemplateId = null;
+        let createdCardData = null;
+
+        // โหลดภาพตัวอย่างการ์ดจริง (ระบบกำหนดเอง)
+        // TODO: ใส่ลิงค์ภาพตัวอย่างที่นี่
+        // ภาพนี้จะใช้แสดงทั้งในหน้าเลือก Template และหน้าสร้างการ์ด
+        const CARD_EXAMPLE_IMAGE_URL = 'https://img2.pic.in.th/Screenshot-2026-01-30-122753.png'; // รอให้ใส่ลิงค์ภาพตัวอย่าง
+
+        // ตรวจสอบ authentication
+        let token = localStorage.getItem('token');
+        
+        // ตรวจสอบ token จาก URL (สำหรับ LINE login redirect)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlToken = urlParams.get('token');
+        if (urlToken && !token) {
+            token = urlToken;
+            localStorage.setItem('token', token);
+        }
+        
+        if (!token) {
+            window.location.href = '/';
+        } else {
+            // แสดงชื่อจาก localStorage ชั่วคราว (จะอัปเดตจาก API ใน loadUserProfile)
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            const usernameEl = document.getElementById('username');
+            if (usernameEl) {
+                usernameEl.textContent = getDisplayName(user);
+            }
+        }
+
+        // ชื่อที่แสดง: ชื่อ-นามสกุล ตามที่ลงทะเบียน > ชื่อเล่น > username > ผู้ใช้
+        function getDisplayName(p) {
+            if (!p) return 'ผู้ใช้';
+            const full = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+            return full || p.nickname || p.username || 'ผู้ใช้';
+        }
+
+        // Load user profile และตรวจสอบว่ามี card อยู่แล้วหรือไม่
+        async function loadUserProfile() {
+            try {
+                const response = await fetch('/api/user/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    const profile = data.data;
+                    const usernameEl = document.getElementById('username');
+                    if (usernameEl) {
+                        usernameEl.textContent = getDisplayName(profile);
+                    }
+                    const user = JSON.parse(localStorage.getItem('user') || '{}');
+                    localStorage.setItem('user', JSON.stringify({ ...user, ...profile }));
+                    
+                    // เติมข้อมูลใน form จาก profile
+                    const nameInput = document.getElementById('name');
+                    const phoneInput = document.getElementById('phone');
+                    const emailInput = document.getElementById('email');
+                    
+                    if (nameInput && !nameInput.value) {
+                        const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+                        if (fullName) nameInput.value = fullName;
+                    }
+                    if (phoneInput && !phoneInput.value && profile.phone) {
+                        phoneInput.value = profile.phone;
+                    }
+                    if (emailInput && !emailInput.value && profile.email) {
+                        emailInput.value = profile.email;
+                    }
+                    
+                    // ตรวจสอบว่ามี card อยู่แล้วหรือไม่
+                    if (data.has_card) {
+                        showCardExistsWarning(data.existing_card);
+                    }
+                    
+                    // อัปเดต preview
+                    updatePreview();
+                }
+            } catch (error) {
+                console.error('Error loading user profile:', error);
+            }
+        }
+
+        // แสดง warning ถ้ามี card อยู่แล้ว
+        function showCardExistsWarning(existingCard) {
+            const warningDiv = document.createElement('div');
+            warningDiv.className = 'alert alert-warning';
+            warningDiv.style.marginBottom = '20px';
+            warningDiv.innerHTML = `
+                <strong>⚠️ คุณมี card อยู่แล้ว</strong><br>
+                <p style="margin: 10px 0;">ระบบจำกัด 1 คน 1 การ์ด</p>
+                <a href="/my-cards" class="btn btn-secondary" style="margin-top: 10px;">ดูการ์ดของฉัน</a>
+            `;
+            
+            const formContainer = document.querySelector('.form-section');
+            if (formContainer) {
+                formContainer.insertBefore(warningDiv, formContainer.firstChild);
+            }
+        }
+
+        // Load templates (มี timeout ป้องกันค้าง)
+        const TEMPLATE_FETCH_TIMEOUT_MS = 15000;
+
+        async function loadTemplates() {
+            const templateGrid = document.getElementById('templateGrid');
+            if (!templateGrid) return;
+
+            templateGrid.innerHTML = '<div class="text-center" style="grid-column: 1 / -1;"><p>กำลังโหลด Templates...</p></div>';
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(function () {
+                controller.abort();
+            }, TEMPLATE_FETCH_TIMEOUT_MS);
+
+            try {
+                const response = await fetch('/api/templates', { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+                }
+                const data = await response.json();
+
+                if (data.success && Array.isArray(data.data)) {
+                    if (data.data.length === 0) {
+                        templateGrid.innerHTML = '<div class="text-center" style="grid-column: 1 / -1;"><p>ไม่พบ Templates</p></div>';
+                    } else {
+                        displayTemplates(data.data);
+                    }
+                } else {
+                    templateGrid.innerHTML = '<div class="text-center" style="grid-column: 1 / -1;"><p class="alert alert-error">ไม่สามารถโหลด templates ได้</p></div>';
+                }
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (templateGrid) {
+                    var msg = error.name === 'AbortError' ? 'โหลดเกินเวลา โปรดตรวจสอบเครือข่ายหรือรีเฟรช' : 'เกิดข้อผิดพลาด โปรดรีเฟรชหน้าอีกครั้ง';
+                    templateGrid.innerHTML = '<div class="text-center" style="grid-column: 1 / -1;"><p class="alert alert-error">' + msg + '</p></div>';
+                }
+            }
+        }
+
+        function displayTemplates(templates) {
+            const grid = document.getElementById('templateGrid');
+            if (!grid) return;
+
+            grid.innerHTML = '';
+
+            if (!Array.isArray(templates) || templates.length === 0) {
+                grid.innerHTML = '<div class="text-center" style="grid-column: 1 / -1;"><p>ไม่พบ Templates</p></div>';
+                return;
+            }
+
+            templates.forEach((template) => {
+                const card = document.createElement('div');
+                card.className = 'template-card';
+                card.onclick = (e) => {
+                    e.stopPropagation();
+                    selectTemplate(template.id, e);
+                };
+                var rawName = template && (template.name !== undefined && template.name !== null) ? String(template.name) : 'Template';
+                var rawDesc = template && (template.description !== undefined && template.description !== null) ? String(template.description) : '';
+                const name = rawName.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const desc = rawDesc.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                
+                // ใช้ preview_image จาก template ถ้ามี, ถ้าไม่มีใช้ภาพตัวอย่าง, ถ้ายังไม่มีใช้ fallback
+                let imgSrc = '';
+                if (template && template.preview_image) {
+                    imgSrc = String(template.preview_image);
+                } else if (CARD_EXAMPLE_IMAGE_URL && CARD_EXAMPLE_IMAGE_URL.trim()) {
+                    imgSrc = CARD_EXAMPLE_IMAGE_URL.trim();
+                } else {
+                    imgSrc = '/images/default-template.jpg';
+                }
+                imgSrc = imgSrc.replace(/"/g, '&quot;');
+                
+                const fallbackImg = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22150%22%3E%3Crect fill=%22%23ddd%22 width=%22200%22 height=%22150%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                card.innerHTML = '<img src="' + imgSrc + '" alt="' + name + '" onerror="this.src=\'' + fallbackImg + '\'"><h3>' + name + '</h3><p>' + desc + '</p>';
+                grid.appendChild(card);
+            });
+        }
+
+        function selectTemplate(templateId, event) {
+            selectedTemplateId = templateId;
+            // Highlight selected
+            document.querySelectorAll('.template-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('selected');
+            } else if (event && event.target) {
+                // Fallback: หา parent template-card
+                const card = event.target.closest('.template-card');
+                if (card) {
+                    card.classList.add('selected');
+                }
+            }
+
+            // Show step 2
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+            
+            setTimeout(() => {
+                updatePreview();
+                loadCardExampleImage();
+            }, 100);
+        }
+
+        function goBackToStep1() {
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step1').style.display = 'block';
+            selectedTemplateId = null;
+        }
+
+        // โหลดภาพตัวอย่างการ์ดจริงในส่วน "ตัวอย่างภาพการ์ดจริง" (ฝั่งซ้าย)
+        function loadCardExampleImage() {
+            const imgEl = document.getElementById('cardExampleImage');
+            const placeholderEl = document.getElementById('cardExamplePlaceholder');
+            if (!imgEl || !placeholderEl) return;
+            if (CARD_EXAMPLE_IMAGE_URL && CARD_EXAMPLE_IMAGE_URL.trim()) {
+                imgEl.src = CARD_EXAMPLE_IMAGE_URL.trim();
+                imgEl.style.display = 'none';
+                placeholderEl.style.display = 'block';
+                imgEl.onload = function () {
+                    imgEl.style.display = 'block';
+                    placeholderEl.style.display = 'none';
+                };
+                imgEl.onerror = function () {
+                    imgEl.style.display = 'none';
+                    placeholderEl.style.display = 'block';
+                };
+            } else {
+                imgEl.style.display = 'none';
+                placeholderEl.style.display = 'block';
+            }
+        }
+
+        // Real-time Preview Update (เฉพาะการ์ดแรก)
+        function updatePreview() {
+            const name = document.getElementById('name').value.trim() || 'name';
+            const phone = document.getElementById('phone').value.trim() || '';
+            const email = document.getElementById('email').value.trim() || '';
+            const description = document.getElementById('description').value.trim() || 'description';
+
+            const nameEl1 = document.getElementById('previewName1');
+            const phoneEl1 = document.getElementById('previewPhone1');
+            const emailEl1 = document.getElementById('previewEmail1');
+            const descEl1 = document.getElementById('previewDescription1');
+            
+            if (nameEl1) nameEl1.textContent = name;
+            if (phoneEl1) phoneEl1.textContent = phone;
+            if (emailEl1) emailEl1.textContent = email;
+            if (descEl1) descEl1.textContent = description;
+
+            // Update buttons
+            const phoneBtns = document.querySelectorAll('.preview-btn-primary');
+            const emailBtns = document.querySelectorAll('.preview-btn-secondary');
+            
+            phoneBtns.forEach(btn => {
+                if (phone && phone !== 'เบอร์โทร') {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.opacity = '1';
+                } else {
+                    btn.style.pointerEvents = 'none';
+                    btn.style.opacity = '0.5';
+                }
+            });
+            
+            emailBtns.forEach(btn => {
+                if (email && email !== 'อีเมล') {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.opacity = '1';
+                } else {
+                    btn.style.pointerEvents = 'none';
+                    btn.style.opacity = '0.5';
+                }
+            });
+        }
+
+        // โหลด templates เสมอเมื่อ DOM พร้อม (API /api/templates ไม่ต้องใช้ token)
+        function runWhenReady() {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', runWhenReady);
+                return;
+            }
+            loadTemplates();
+            if (token) {
+                loadUserProfile();
+                const nameInput = document.getElementById('name');
+                const phoneInput = document.getElementById('phone');
+                const emailInput = document.getElementById('email');
+                const descriptionInput = document.getElementById('description');
+                if (nameInput) nameInput.addEventListener('input', updatePreview);
+                if (phoneInput) phoneInput.addEventListener('input', updatePreview);
+                if (emailInput) emailInput.addEventListener('input', updatePreview);
+                if (descriptionInput) descriptionInput.addEventListener('input', updatePreview);
+            }
+        }
+        runWhenReady();
+
+        // Helper function to validate URL
+        function isValidUrl(string) {
+            if (!string) return false;
+            try {
+                const url = new URL(string);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch (_) {
+                return false;
+            }
+        }
+
+        // Image preview สำหรับ Card 1
+        const image1Input = document.getElementById('image1');
+        if (image1Input) {
+            image1Input.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const imageUrl = e.target.result;
+                        document.getElementById('previewImg1').src = imageUrl;
+                        document.getElementById('fileInfo1').textContent = `${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+                        document.getElementById('imagePreview1').style.display = 'block';
+                        
+                        // Update flex preview hero image สำหรับ Card 1 (ไฟล์ที่อัพโหลดมี priority สูงกว่า URL)
+                        const previewHeroImg1 = document.getElementById('previewHeroImg1');
+                        const previewPlaceholder1 = document.getElementById('previewPlaceholder1');
+                        if (previewHeroImg1) {
+                            previewHeroImg1.src = imageUrl;
+                            previewHeroImg1.style.display = 'block';
+                            previewPlaceholder1.style.display = 'none';
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    document.getElementById('imagePreview1').style.display = 'none';
+                    // Reset preview hero สำหรับ Card 1
+                    const previewHeroImg1 = document.getElementById('previewHeroImg1');
+                    const previewPlaceholder1 = document.getElementById('previewPlaceholder1');
+                    if (previewHeroImg1) {
+                        previewHeroImg1.src = '';
+                        previewHeroImg1.style.display = 'none';
+                        previewPlaceholder1.style.display = 'flex';
+                    }
+                }
+            });
+        }
+
+        // เบอร์โทร: รับเฉพาะตัวเลข ไม่เกิน 10 หลัก
+        const phoneInputCreate = document.getElementById('phone');
+        if (phoneInputCreate) {
+            phoneInputCreate.addEventListener('input', function () {
+                this.value = this.value.replace(/\D/g, '').slice(0, 10);
+            });
+        }
+
+        // Submit form
+        document.getElementById('cardForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!selectedTemplateId) {
+                showAlert('errorAlert', 'กรุณาเลือก Template');
+                return;
+            }
+            const phoneVal = document.getElementById('phone').value.trim();
+            if (phoneVal.length > 10) {
+                showAlert('errorAlert', 'เบอร์โทรศัพท์ไม่เกิน 10 หลัก');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('template_id', selectedTemplateId);
+            formData.append('name', document.getElementById('name').value.trim());
+            formData.append('phone', document.getElementById('phone').value.trim());
+            formData.append('email', document.getElementById('email').value.trim());
+            formData.append('description', document.getElementById('description').value.trim());
+            // การ์ดที่ 2–4 ใช้ดีไซน์ใน template — ไม่ส่ง description2/image2
+            
+            // Add image1 (การ์ดแรกเท่านั้น)
+            const image1File = document.getElementById('image1')?.files[0];
+            if (image1File) {
+                formData.append('image1', image1File);
+            }
+
+            const createBtn = document.getElementById('createBtn');
+            createBtn.disabled = true;
+            createBtn.innerHTML = '<span class="loading"></span>กำลังสร้าง...';
+
+            function resetCreateButton() {
+                createBtn.disabled = false;
+                createBtn.textContent = 'สร้าง Magic Card';
+            }
+
+            try {
+                const response = await fetch('/api/create-card', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                let data;
+                try {
+                    data = await response.json();
+                } catch (parseErr) {
+                    console.error('Parse response error:', parseErr);
+                    showAlert('errorAlert', 'ไม่สามารถอ่านผลจากเซิร์ฟเวอร์ได้ กรุณาลองใหม่');
+                    document.getElementById('errorAlert').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    resetCreateButton();
+                    return;
+                }
+
+                if (response.ok && data.success) {
+                    createdCardData = data.data;
+                    showSuccess(data.data);
+                    // ไม่ reset ปุ่ม เพราะจะ redirect ไป my-cards
+                } else {
+                    if (data.existing_card) {
+                        showCardExistsWarning(data.existing_card);
+                    }
+                    showAlert('errorAlert', data.message || 'เกิดข้อผิดพลาดในการสร้างการ์ด');
+                    document.getElementById('errorAlert').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    resetCreateButton();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('errorAlert', 'เกิดข้อผิดพลาดในการสร้างการ์ด (เครือข่ายหรือเซิร์ฟเวอร์)');
+                document.getElementById('errorAlert').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                resetCreateButton();
+            }
+        });
+
+        function showSuccess(data) {
+            document.getElementById('step2').style.display = 'none';
+            document.getElementById('step3').style.display = 'block';
+            document.getElementById('liffUrl').value = data.liff_url;
+
+            showAlert('successAlert', 'สร้างการ์ดสำเร็จ! กำลังนำทางไปหน้าการ์ดของฉัน...', 'success');
+            // นำทางไปหน้า "ดูการ์ดทั้งหมด" (my-cards) เพื่อดูการ์ดและคัดลอกลิงค์
+            setTimeout(function () {
+                window.location.replace('/my-cards?created=1');
+            }, 1000);
+        }
+
+        function copyLink() {
+            const urlInput = document.getElementById('liffUrl');
+            urlInput.select();
+            document.execCommand('copy');
+            alert('คัดลอกลิงค์แล้ว!');
+        }
+
+        function createNew() {
+            document.getElementById('cardForm').reset();
+            const imagePreview1 = document.getElementById('imagePreview1');
+            if (imagePreview1) imagePreview1.style.display = 'none';
+            const previewHeroImg1 = document.getElementById('previewHeroImg1');
+            const previewPlaceholder1 = document.getElementById('previewPlaceholder1');
+            if (previewHeroImg1) {
+                previewHeroImg1.src = '';
+                previewHeroImg1.style.display = 'none';
+                previewPlaceholder1.style.display = 'flex';
+            }
+            document.getElementById('step3').style.display = 'none';
+            document.getElementById('step1').style.display = 'block';
+            selectedTemplateId = null;
+            createdCardData = null;
+            updatePreview();
+        }
+
+        function showAlert(alertId, message, type = 'error') {
+            const alert = document.getElementById(alertId);
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        // Load templates จะถูกเรียกใน DOMContentLoaded event
+    </script>
+</body>
+</html>

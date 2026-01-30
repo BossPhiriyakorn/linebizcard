@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>กำลังพาไปหน้า LINE - Line Flex Message Builder</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .liff-container {
+            max-width: 100%;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .liff-card {
+            width: 100%;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="liff-container">
+        <div class="card liff-card">
+            <div id="loading" class="text-center">
+                <div class="loading" style="margin: 0 auto;"></div>
+                <p style="margin-top: 20px;">กำลังพาไปหน้า LINE Login...</p>
+            </div>
+
+            <div id="error" class="alert alert-error" style="display: none;"></div>
+            <div id="success" class="alert alert-success" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script>
+        let LIFF_ID = '';
+
+        // ดึง LIFF ID จาก server (ดึงจาก .env ผ่าน API)
+        async function fetchLiffId() {
+            try {
+                const response = await fetch('/api/liff-login-id');
+                if (!response.ok) {
+                    throw new Error('ไม่สามารถดึง LIFF ID ได้');
+                }
+                const data = await response.json();
+                if (data.success && data.liff_id) {
+                    LIFF_ID = data.liff_id;
+                } else {
+                    throw new Error('ไม่พบ LIFF ID ใน response');
+                }
+            } catch (error) {
+                console.error('Error fetching LIFF ID:', error);
+                showError('ไม่สามารถดึง LIFF ID ได้ กรุณาตรวจสอบการตั้งค่า');
+                document.getElementById('loading').style.display = 'none';
+                throw error; // Throw เพื่อให้ caller รู้ว่าเกิด error
+            }
+        }
+
+        // Function สำหรับจัดการ token redirect (ใช้ก่อน init LIFF)
+        async function handleTokenRedirect(token, urlParams) {
+            // บันทึก token
+            localStorage.setItem('token', token);
+            const lineUserId = urlParams.get('line_user_id');
+            if (lineUserId) {
+                localStorage.setItem('line_user_id', lineUserId);
+            }
+            
+            showSuccess('กำลังตรวจสอบข้อมูล...');
+            
+            // ตรวจสอบว่า user กรอกข้อมูล profile ครบหรือยัง
+            try {
+                const profileResponse = await fetch('/api/user/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!profileResponse.ok) {
+                    throw new Error('ไม่สามารถดึงข้อมูล profile ได้');
+                }
+                
+                const profileData = await profileResponse.json();
+                
+                if (profileData.success) {
+                    localStorage.setItem('user', JSON.stringify(profileData.data));
+                    
+                    // ถ้ายังไม่กรอกข้อมูล profile → redirect ไปหน้าลงทะเบียน
+                    if (!profileData.data.is_profile_complete) {
+                        showSuccess('กรุณากรอกข้อมูลเพิ่มเติม...');
+                        setTimeout(() => {
+                            window.location.href = `/register-line?token=${token}&line_user_id=${lineUserId || ''}`;
+                        }, 800);
+                        return;
+                    }
+                    
+                    // ลูกค้าเก่า: มีการ์ดแล้ว → หน้าดูการ์ด ไม่มีการ์ด → หน้าสร้างการ์ด
+                    showSuccess('เข้าสู่ระบบสำเร็จ! กำลังไปยังหน้าหลัก...');
+                    const nextPath = profileData.has_card ? '/my-cards' : '/create';
+                    setTimeout(() => {
+                        window.location.href = nextPath;
+                    }, 800);
+                    return;
+                } else {
+                    throw new Error(profileData.message || 'ไม่สามารถดึงข้อมูล profile ได้');
+                }
+            } catch (error) {
+                console.error('Error checking profile:', error);
+                // Fallback: redirect ไปหน้า create
+                showSuccess('เข้าสู่ระบบสำเร็จ! กำลังไปยังหน้าหลัก...');
+                setTimeout(() => {
+                    window.location.href = '/my-cards';
+                }, 800);
+            }
+        }
+
+        async function initLiff() {
+            try {
+                // ตรวจสอบว่ามี token จาก callback หรือไม่ (ตรวจสอบก่อน init LIFF)
+                const urlParams = new URLSearchParams(window.location.search);
+                const token = urlParams.get('token');
+                const error = urlParams.get('error');
+                
+                // ถ้ามี error → แสดง error
+                if (error) {
+                    showError('เกิดข้อผิดพลาด: ' + decodeURIComponent(error));
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+                
+                // ถ้ามี token → ตรวจสอบ profile และ redirect (ไม่ต้อง init LIFF)
+                if (token) {
+                    await handleTokenRedirect(token, urlParams);
+                    return;
+                }
+
+                // ถ้าไม่มี token → init LIFF หรือ redirect ไป LINE Login ทันที
+                if (typeof liff === 'undefined') {
+                    // ไม่ใช่ LIFF environment - พาไป LINE Login ทันที
+                    redirectToLineLogin();
+                    return;
+                }
+
+                // ดึง LIFF_ID จาก server (ต้องดึงก่อน init LIFF)
+                try {
+                    await fetchLiffId();
+                } catch (error) {
+                    // fetchLiffId จะแสดง error แล้ว
+                    return;
+                }
+
+                if (!LIFF_ID) {
+                    showError('ไม่พบ LIFF ID กรุณาตรวจสอบการตั้งค่า');
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+
+                // Initialize LIFF (try-catch เพื่อจัดการ error)
+                try {
+                    await liff.init({ liffId: LIFF_ID });
+                } catch (liffError) {
+                    console.error('LIFF init error:', liffError);
+                    // ถ้า init fail → พาไป LINE Login ทันที
+                    redirectToLineLogin();
+                    return;
+                }
+
+                // ตรวจสอบว่า login แล้วหรือยัง
+                if (liff.isLoggedIn()) {
+                    // ดึง access token จาก LIFF
+                    const profile = await liff.getProfile();
+                    const accessToken = liff.getAccessToken();
+
+                    // ส่งข้อมูลไป backend เพื่อสร้าง/อัปเดต user
+                    try {
+                        const response = await fetch('/api/auth/line/liff-login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                line_user_id: profile.userId,
+                                display_name: profile.displayName,
+                                picture_url: profile.pictureUrl || null
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            localStorage.setItem('token', data.token);
+                            localStorage.setItem('line_user_id', profile.userId);
+                            localStorage.setItem('user', JSON.stringify(data.user));
+                            
+                            // ตรวจสอบว่า user กรอกข้อมูล profile ครบหรือยัง
+                            try {
+                                const profileResponse = await fetch('/api/user/profile', {
+                                    headers: {
+                                        'Authorization': `Bearer ${data.token}`
+                                    }
+                                });
+                                const profileData = await profileResponse.json();
+                                
+                                if (profileData.success && !profileData.data.is_profile_complete) {
+                                    // ถ้ายังไม่กรอกข้อมูล profile → redirect ไปหน้าลงทะเบียน
+                                    showSuccess('กรุณากรอกข้อมูลเพิ่มเติม...');
+                                    setTimeout(() => {
+                                        window.location.href = `/register-line?token=${data.token}&line_user_id=${profile.userId}`;
+                                    }, 1000);
+                                } else {
+                                    // ลูกค้าเก่า: มีการ์ดแล้ว → หน้าดูการ์ด ไม่มีการ์ด → หน้าสร้างการ์ด
+                                    showSuccess('เข้าสู่ระบบสำเร็จ! กำลังไปยังหน้าหลัก...');
+                                    const nextPath = profileData.has_card ? '/my-cards' : '/create';
+                                    setTimeout(() => {
+                                        window.location.href = nextPath;
+                                    }, 1000);
+                                }
+                            } catch (error) {
+                                console.error('Error checking profile:', error);
+                                showSuccess('เข้าสู่ระบบสำเร็จ! กำลังไปยังหน้าหลัก...');
+                                setTimeout(() => {
+                                    window.location.href = '/create';
+                                }, 1000);
+                            }
+                        } else {
+                            showError(data.message || 'ไม่สามารถเข้าสู่ระบบได้');
+                            document.getElementById('loading').style.display = 'none';
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        showError('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                } else {
+                    // ยังไม่ login - พาไป LINE Login ทันที (ไม่แสดงหน้า login)
+                    redirectToLineLogin();
+                }
+            } catch (error) {
+                console.error('LIFF init error:', error);
+                showError('เกิดข้อผิดพลาดในการเริ่มต้น LIFF: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function redirectToLineLogin() {
+            const baseUrl = window.location.origin;
+            window.location.href = `${baseUrl}/api/auth/line/login`;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('success').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+        }
+
+        // Initialize เมื่อโหลดหน้า
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initLiff();
+        });
+    </script>
+</body>
+</html>
