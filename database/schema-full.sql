@@ -109,7 +109,6 @@ CREATE TABLE IF NOT EXISTS user_cards (
 
 CREATE INDEX IF NOT EXISTS idx_user_cards_user_id ON user_cards(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_cards_unique_id ON user_cards(unique_id);
-CREATE INDEX IF NOT EXISTS idx_user_cards_expires_at ON user_cards(expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_cards_card_type ON user_cards(card_type);
 
 -- -----------------------------------------------------------------------------
@@ -164,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_cards_updated_at ON user_cards(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_cards_expires_at ON user_cards(expires_at);
 CREATE INDEX IF NOT EXISTS idx_templates_updated_at ON templates(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_templates_is_active ON templates(is_active);
 CREATE INDEX IF NOT EXISTS idx_templates_default_expires_at ON templates(default_expires_at);
