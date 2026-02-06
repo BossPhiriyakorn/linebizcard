@@ -3,74 +3,65 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs-extra');
+const next = require('next');
 
-// Import routes
-const indexRoutes = require('./routes/index');
 const apiRoutes = require('./routes/api');
 const authRoutes = require('./routes/auth');
-const shareRoutes = require('./routes/share');
+const cmsApiRoutes = require('./routes/cmsApi');
+
+const PORT = process.env.PORT || 3000;
+const dev = process.env.NODE_ENV !== 'production';
+const nextApp = next({ dev, dir: path.join(__dirname, 'frontend') });
+const handle = nextApp.getRequestHandler();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Middleware
+// ต้องเปิดเมื่อรันหลัง proxy (เช่น Cloudflare Tunnel) เพื่อให้ rate-limit อ่าน IP ถูกต้อง
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files
-app.use(express.static('public'));
+const dirs = ['uploads/images', 'uploads/cms/settings', 'uploads/cms/qr', 'json'];
+dirs.forEach((dir) => { fs.ensureDirSync(dir); });
+
+app.use('/api/cms', cmsApiRoutes);
+app.use('/api', apiRoutes);
+app.use('/api', authRoutes);
+app.use('/api/auth', authRoutes);
+
 app.use('/uploads', express.static('uploads'));
 app.use('/json', express.static('json'));
 
-// สร้างโฟลเดอร์ที่จำเป็น
-const dirs = ['uploads/images', 'json'];
-dirs.forEach(dir => {
-    fs.ensureDirSync(dir);
+app.all('*', (req, res) => handle(req, res));
+
+app.use((err, req, res, nextHandler) => {
+  console.error('Error:', err);
+  res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในระบบ: ' + err.message });
 });
 
-// Routes
-app.use('/', indexRoutes);
-app.use('/api', apiRoutes);
-app.use('/api', authRoutes); // /api/login, /api/register, /api/logout, /api/line/login, /api/line/callback
-app.use('/api/auth', authRoutes); // /api/auth/line/login, /api/auth/line/callback (duplicate for compatibility)
-app.use('/share', shareRoutes);
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Error:', err);
-    res.status(500).json({
-        success: false,
-        message: 'เกิดข้อผิดพลาดในระบบ: ' + err.message
-    });
-});
-
-// 404 handler — ถ้าเป็น GET ไปหน้าแก้ไขการ์ดแต่ route ไม่ตรง ให้ส่ง HTML พร้อมลิงค์กลับ
 app.use((req, res) => {
-    const wantsHtml = req.method === 'GET' && (!req.get('Accept') || req.get('Accept').includes('text/html'));
-    if (wantsHtml && req.path.startsWith('/edit-card')) {
-        res.status(404).type('html').send(`
-<!DOCTYPE html>
-<html lang="th">
-<head><meta charset="UTF-8"><title>ไม่พบหน้า</title></head>
-<body style="font-family: sans-serif; padding: 20px; text-align: center;">
-  <h1>ไม่พบหน้าที่ต้องการ</h1>
-  <p><a href="/my-cards">กลับไปรายการการ์ด</a></p>
-  <p style="color:#666;">ถ้ากดปุ่มแก้ไขแล้วเจอหน้านี้ กรุณารีสตาร์ทเซิร์ฟเวอร์ (npm start) แล้วลองใหม่</p>
-</body></html>`);
-        return;
-    }
-    res.status(404).json({
-        success: false,
-        message: 'ไม่พบหน้าที่ต้องการ'
-    });
+  res.status(404).json({ success: false, message: 'ไม่พบหน้าที่ต้องการ' });
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
-    console.log(`📁 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔗 LIFF ID: ${process.env.LIFF_ID}`);
+// ป้องกัน process crash จาก unhandled rejection (เช่น ใน create-card) — log แล้วไม่ exit
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 ให้ Cloudflare Tunnel / proxy เข้าถึงได้
+
+nextApp.prepare().then(() => {
+  app.listen(PORT, HOST, () => {
+    console.log('🚀 Server is running on http://' + (HOST === '0.0.0.0' ? 'localhost' : HOST) + ':' + PORT);
+    console.log('📁 Environment: ' + (process.env.NODE_ENV || 'development'));
+    console.log('🔗 LIFF ID: ' + (process.env.LIFF_ID || ''));
+    console.log('📦 Frontend: Next.js (same port)');
+  });
+}).catch((err) => {
+  console.error('Next.js prepare failed:', err);
+  process.exit(1);
 });
 
 module.exports = app;

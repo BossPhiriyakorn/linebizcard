@@ -1,0 +1,129 @@
+'use client';
+
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import CustomerAppBar from '../components/CustomerAppBar';
+
+function getToken() {
+  return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+}
+
+function getHeaders() {
+  return { Authorization: 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
+}
+
+const inputClass =
+  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
+const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
+
+function RegisterLineContent() {
+  const searchParams = useSearchParams();
+  const [form, setForm] = useState({ first_name: '', last_name: '', nickname: '', phone: '', email: '' });
+  const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const urlToken = searchParams.get('token');
+    if (urlToken) {
+      localStorage.setItem('token', urlToken);
+      const p = new URLSearchParams(window.location.search);
+      p.delete('token');
+      const newSearch = p.toString();
+      window.history.replaceState({}, '', window.location.pathname + (newSearch ? '?' + newSearch : ''));
+    }
+  }, [searchParams]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.first_name?.trim() || !form.last_name?.trim()) {
+      setAlert({ show: true, msg: 'กรุณากรอกชื่อและนามสกุล', type: 'error' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/line/complete-profile', { method: 'POST', headers: getHeaders(), body: JSON.stringify(form) });
+      const data = await res.json();
+      if (data.success) {
+        setAlert({ show: true, msg: 'ลงทะเบียนสำเร็จ กำลังพาไปเลือกแพ็กเกจ...', type: 'success' });
+        setTimeout(() => { window.location.href = '/choose-package'; }, 1500);
+      } else setAlert({ show: true, msg: data.message || 'ลงทะเบียนไม่สำเร็จ', type: 'error' });
+    } catch {
+      setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="w-full box-border" style={{ width: '100%', minWidth: 0 }}>
+      <CustomerAppBar />
+      <div
+        className="my-6 rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-8"
+        style={{ maxWidth: 500, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}
+      >
+        <div className="mb-6 text-center">
+          <h1 className="mb-2.5 text-2xl font-bold text-[#1DB446]">ลงทะเบียน</h1>
+          <p className="text-gray-500">กรุณากรอกข้อมูลเพื่อสร้างการ์ดของคุณ</p>
+        </div>
+        <div className="mb-5 rounded-xl bg-gradient-to-br from-[#667eea] to-[#764ba2] p-4 text-center text-white">
+          <p className="m-0">✅ คุณได้เข้าสู่ระบบด้วย LINE แล้ว</p>
+          <p className="mt-1 text-sm opacity-90">กรุณากรอกข้อมูลเพิ่มเติมเพื่อเริ่มใช้งาน</p>
+        </div>
+        {alert.show && (
+          <div
+            className={`mb-5 rounded-lg px-5 py-3.5 ${
+              alert.type === 'error'
+                ? 'border border-red-200 bg-red-50 text-red-800'
+                : 'border border-green-200 bg-green-50 text-green-800'
+            }`}
+          >
+            {alert.msg}
+          </div>
+        )}
+        <form onSubmit={handleSubmit}>
+          <div className="mb-5">
+            <label className={labelClass}>ชื่อ *</label>
+            <input type="text" required placeholder="กรอกชื่อ" value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} className={inputClass} />
+          </div>
+          <div className="mb-5">
+            <label className={labelClass}>นามสกุล *</label>
+            <input type="text" required placeholder="กรอกนามสกุล" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} className={inputClass} />
+          </div>
+          <div className="mb-5">
+            <label className={labelClass}>ชื่อเล่น</label>
+            <input type="text" placeholder="ชื่อเล่น (ไม่บังคับ)" value={form.nickname} onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))} className={inputClass} />
+          </div>
+          <div className="mb-5">
+            <label className={labelClass}>เบอร์โทร *</label>
+            <input type="tel" placeholder="เบอร์โทรศัพท์" maxLength={10} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} />
+          </div>
+          <div className="mb-5">
+            <label className={labelClass}>อีเมล</label>
+            <input type="email" placeholder="อีเมล" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className={inputClass} />
+          </div>
+          <button
+            type="submit"
+            className="w-full min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] disabled:bg-gray-400"
+            disabled={loading}
+          >
+            {loading ? 'กำลังบันทึก...' : 'บันทึก'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default function RegisterLinePage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full box-border" style={{ width: '100%', minWidth: 0 }}>
+        <CustomerAppBar />
+        <div className="flex flex-col items-center justify-center py-16">
+          <p className="text-gray-500">กำลังโหลด...</p>
+        </div>
+      </div>
+    }>
+      <RegisterLineContent />
+    </Suspense>
+  );
+}

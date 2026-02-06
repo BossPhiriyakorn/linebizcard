@@ -1,6 +1,6 @@
-# Line Flex Message Builder Platform
+# MagicBiz-Card
 
-แพลตฟอร์มสำหรับสร้างและแชร์ Line Flex Message (Magic Card) โดยผู้ใช้สามารถลงทะเบียน เลือก Template กรอกข้อมูล และสร้าง Flex Message พร้อมลิงค์ LIFF URL สำหรับแชร์ผ่าน Line
+แพลตฟอร์มสำหรับสร้างและแชร์นามบัตรดิจิทัล (Flex Message) ผ่าน LINE โดยผู้ใช้สามารถลงทะเบียน เลือก Template กรอกข้อมูล และสร้างการ์ด พร้อมลิงค์ LIFF URL สำหรับแชร์ผ่าน LINE
 
 ## ✨ ฟีเจอร์
 
@@ -207,13 +207,13 @@ line-flex-builder/
 - ไปที่ `http://localhost:3000/register` เพื่อลงทะเบียน
 - หรือ `http://localhost:3000/login` เพื่อเข้าสู่ระบบ
 
-### 2. สร้าง Magic Card
+### 2. สร้างการ์ด
 
 1. ไปที่ `http://localhost:3000/create`
 2. เลือก Template ที่ต้องการ
 3. กรอกข้อมูล (ชื่อ, เบอร์โทร, อีเมล)
 4. อัพโหลดรูปภาพ (ถ้าต้องการ)
-5. กด "สร้าง Magic Card"
+5. กด "สร้างการ์ด"
 6. จะได้ลิงค์ LIFF URL สำหรับแชร์
 
 ### 3. ดูการ์ดทั้งหมด

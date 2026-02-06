@@ -13,17 +13,17 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
-        // สร้าง unique filename: timestamp-random-originalname
+        // ใช้ชื่อไฟล์เฉพาะ ASCII เพื่อให้ URL ใน Flex Message ใช้ได้กับ LINE (ป้องกัน 404 / การแชร์ไม่เห็นการ์ด)
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        const name = path.basename(file.originalname, ext);
-        cb(null, `${name}-${uniqueSuffix}${ext}`);
+        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        const safeExt = ext.startsWith('.') ? ext : '.' + ext;
+        cb(null, `img-${uniqueSuffix}${safeExt}`);
     }
 });
 
-// File filter
+// File filter (การ์ด + สลิป): รองรับ jpg, png, gif, webp, heic, heif รวมรูปจาก iPhone
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'jpg,jpeg,png,gif').split(',');
+    const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'jpg,jpeg,png,gif,webp,heic,heif').split(',').map(s => s.trim());
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
     
     if (allowedTypes.includes(ext)) {
@@ -51,6 +51,60 @@ const uploadMultiple = upload.fields([
     { name: 'image2', maxCount: 1 }
 ]);
 
+// อัพโหลดสลิปการโอน (ช่องทาง QR)
+const uploadSlip = upload.single('slip');
+
+// -----------------------------------------------------------------------------
+// CMS: อัปโหลดรูปตั้งค่า (โลโก้, พื้นหลัง) และรูป QR แยกโฟลเดอร์
+// uploads/cms/settings = โลโก้ + พื้นหลังหน้า Login
+// uploads/cms/qr = รูป QR การชำระเงิน
+// รองรับ: jpg, jpeg, png, gif, webp, heic, heif (iPhone)
+// -----------------------------------------------------------------------------
+const cmsSettingsDir = path.join(process.cwd(), 'uploads/cms/settings');
+const cmsQrDir = path.join(process.cwd(), 'uploads/cms/qr');
+fs.ensureDirSync(cmsSettingsDir);
+fs.ensureDirSync(cmsQrDir);
+
+const cmsAllowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+const cmsFileFilter = (req, file, cb) => {
+    const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/^\./, '');
+    if (cmsAllowedExt.includes(ext)) {
+        cb(null, true);
+    } else {
+        cb(new Error(`ประเภทไฟล์ไม่รองรับ อนุญาต: ${cmsAllowedExt.join(', ')}`), false);
+    }
+};
+
+const cmsSettingsStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, cmsSettingsDir),
+    filename: (req, file, cb) => {
+        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        const safeExt = ext.startsWith('.') ? ext : '.' + ext;
+        cb(null, `cms-${Date.now()}-${Math.round(Math.random() * 1E9)}${safeExt}`);
+    }
+});
+
+const cmsQrStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, cmsQrDir),
+    filename: (req, file, cb) => {
+        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        const safeExt = ext.startsWith('.') ? ext : '.' + ext;
+        cb(null, `qr-${Date.now()}-${Math.round(Math.random() * 1E9)}${safeExt}`);
+    }
+});
+
+const uploadCmsSettings = multer({
+    storage: cmsSettingsStorage,
+    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 },
+    fileFilter: cmsFileFilter
+}).single('file');
+
+const uploadCmsQr = multer({
+    storage: cmsQrStorage,
+    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 },
+    fileFilter: cmsFileFilter
+}).single('file');
+
 // Error handler middleware
 const handleUploadError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
@@ -77,5 +131,8 @@ const handleUploadError = (err, req, res, next) => {
 module.exports = {
     uploadSingle,
     uploadMultiple,
+    uploadSlip,
+    uploadCmsSettings,
+    uploadCmsQr,
     handleUploadError
 };

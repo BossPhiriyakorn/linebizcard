@@ -12,9 +12,13 @@ const pool = new Pool({
     connectionTimeoutMillis: 2000,
 });
 
-// Test connection
+// Log connection ครั้งเดียวเพื่อลด log ซ้ำ
+let hasLoggedConnect = false;
 pool.on('connect', () => {
-    console.log('✅ Connected to PostgreSQL database');
+    if (!hasLoggedConnect) {
+        hasLoggedConnect = true;
+        console.log('✅ Connected to PostgreSQL database');
+    }
 });
 
 pool.on('error', (err) => {

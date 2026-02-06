@@ -1,6 +1,8 @@
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../middleware/auth');
+const { addCmsNotification } = require('../utils/cmsNotification');
+const { generateOTP, sendOTPEmail } = require('../services/emailService');
 
 /**
  * ลงทะเบียนผู้ใช้ใหม่
@@ -43,17 +45,56 @@ async function register(req, res) {
         );
 
         const user = result.rows[0];
+        addCmsNotification(pool, {
+            notification_type: 'new_signup',
+            title: 'ลูกค้าสมัครใหม่',
+            message: `${user.username} (${user.email})`,
+            link_url: '/cms/users',
+            related_user_id: user.id
+        }).catch(() => {});
+
+        // ส่ง OTP อัตโนมัติหลัง register
+        try {
+            const otpCode = generateOTP();
+            const expiryMinutes = parseInt(process.env.OTP_EXPIRY_MINUTES || '5');
+            const expiresAt = new Date();
+            expiresAt.setMinutes(expiresAt.getMinutes() + expiryMinutes);
+
+            // บันทึก OTP ใน database
+            await pool.query(
+                `INSERT INTO email_verifications (user_id, email, otp_code, expires_at)
+                 VALUES ($1, $2, $3, $4)`,
+                [user.id, user.email, otpCode, expiresAt]
+            );
+
+            // อัปเดต last_otp_sent_at
+            await pool.query(
+                'UPDATE users SET last_otp_sent_at = CURRENT_TIMESTAMP WHERE id = $1',
+                [user.id]
+            );
+
+            // ส่งอีเมล OTP (ไม่ต้องรอผลลัพธ์)
+            sendOTPEmail(user.email, otpCode).catch(err => {
+                console.error('Failed to send OTP email after registration:', err);
+            });
+        } catch (otpError) {
+            console.error('Error creating OTP after registration:', otpError);
+            // ไม่ต้อง fail registration ถ้าส่ง OTP ไม่สำเร็จ
+        }
+
         const token = generateToken(user);
 
         res.status(201).json({
             success: true,
-            message: 'ลงทะเบียนสำเร็จ',
+            message: 'ลงทะเบียนสำเร็จ กรุณาตรวจสอบอีเมลเพื่อยืนยันบัญชี',
             token: token,
             user: {
                 id: user.id,
                 username: user.username,
-                email: user.email
-            }
+                email: user.email,
+                email_verified: false
+            },
+            requires_verification: true
         });
     } catch (error) {
         console.error('Register error:', error);
@@ -104,6 +145,14 @@ async function login(req, res) {
 
         const user = result.rows[0];
 
+        // ถ้าบัญชีถูกระงับ → ห้ามเข้าสู่ระบบ
+        if (user.is_active === false) {
+            return res.status(403).json({
+                success: false,
+                message: 'บัญชีถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ'
+            });
+        }
+
         // Verify password
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
@@ -116,15 +165,25 @@ async function login(req, res) {
         // Generate token
         const token = generateToken(user);
 
+        // ตรวจสอบสถานะการยืนยันอีเมล
+        const emailVerified = user.email_verified || false;
+        let message = 'เข้าสู่ระบบสำเร็จ';
+        
+        if (!emailVerified && user.login_type === 'email') {
+            message = 'เข้าสู่ระบบสำเร็จ แต่กรุณายืนยันอีเมลของคุณ';
+        }
+
         res.json({
             success: true,
-            message: 'เข้าสู่ระบบสำเร็จ',
+            message: message,
             token: token,
             user: {
                 id: user.id,
                 username: user.username,
-                email: user.email
-            }
+                email: user.email,
+                email_verified: emailVerified
+            },
+            requires_verification: !emailVerified && user.login_type === 'email'
         });
     } catch (error) {
         console.error('Login error:', error);

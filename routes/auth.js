@@ -2,11 +2,18 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const lineAuthController = require('../controllers/lineAuthController');
+const emailVerificationController = require('../controllers/emailVerificationController');
+const { rateLimitLogin, rateLimitOTPRequest, rateLimitOTPVerify } = require('../middleware/rateLimit');
 
-// Email/Password Authentication
+// Email/Password Authentication (rate limit ป้องกัน brute force)
 router.post('/register', authController.register);
-router.post('/login', authController.login);
+router.post('/login', rateLimitLogin, authController.login);
 router.post('/logout', authController.logout);
+
+// Email Verification (OTP)
+router.post('/send-otp', rateLimitOTPRequest, emailVerificationController.sendOTP);
+router.post('/verify-otp', rateLimitOTPVerify, emailVerificationController.verifyOTP);
+router.get('/verification-status', emailVerificationController.getVerificationStatus);
 
 // LINE Authentication
 router.get('/line/login', lineAuthController.lineLogin);
@@ -14,8 +21,8 @@ router.get('/line/callback', lineAuthController.lineCallback);
 router.get('/line/user', lineAuthController.getLineUser);
 router.post('/line/complete-profile', require('../middleware/auth').authenticateToken, lineAuthController.completeProfile);
 
-// LIFF Login (สำหรับ LIFF app)
-router.post('/line/liff-login', async (req, res) => {
+// LIFF Login (สำหรับ LIFF app) — rate limit ป้องกัน spam
+router.post('/line/liff-login', rateLimitLogin, async (req, res) => {
     try {
         const pool = require('../config/database');
         const { generateToken } = require('../middleware/auth');

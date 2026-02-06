@@ -2,12 +2,11 @@ const axios = require('axios');
 require('dotenv').config();
 
 /**
- * LINE Service สำหรับจัดการ LINE Login, LIFF และ Messaging API (Push Message)
+ * LINE Service สำหรับจัดการ LINE Login และ LIFF
  */
 
 const LINE_API_BASE = 'https://api.line.me';
 const LINE_LOGIN_BASE = 'https://access.line.me';
-const LINE_MESSAGING_API = 'https://api.line.me/v2/bot';
 
 /**
  * สร้าง LINE Login URL
@@ -113,42 +112,9 @@ async function verifyIdToken(idToken) {
     }
 }
 
-/**
- * ส่ง Flex Message ไปให้ผู้ใช้ใน LINE (Push Message) — ใช้ Messaging API Channel
- * ใช้หลังสร้างการ์ดเสร็จ — ต้องใช้ userId ของ Messaging API Channel (messaging_api_user_id)
- * ไม่ใช่ line_user_id จาก LINE Login (คนละ Channel)
- */
-async function pushFlexMessage(toUserId, flexContents, altText = 'การ์ดของคุณ') {
-    const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    if (!token || !toUserId) {
-        if (!token) console.warn('LINE_CHANNEL_ACCESS_TOKEN ไม่ได้ตั้งค่า — ข้ามการส่งการ์ดให้ลูกค้าใน LINE');
-        return false;
-    }
-    try {
-        const r = await axios.post(
-            `${LINE_MESSAGING_API}/message/push`,
-            {
-                to: toUserId,
-                messages: [{ type: 'flex', altText, contents: flexContents }]
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-        return r.status === 200;
-    } catch (e) {
-        console.error('Push Flex Message error:', e.response?.data || e.message);
-        return false;
-    }
-}
-
 module.exports = {
     getLineLoginUrl,
     exchangeCodeForToken,
     getUserProfile,
-    verifyIdToken,
-    pushFlexMessage
+    verifyIdToken
 };

@@ -8,7 +8,8 @@ const pool = require('../config/database');
 async function getAllTemplates(req, res) {
     try {
         const result = await pool.query(
-            'SELECT id, name, description, preview_image, created_at FROM templates ORDER BY id ASC'
+            `SELECT id, name, description, preview_image, sample_image_urls, created_at FROM templates 
+             WHERE COALESCE(is_active, true) = true ORDER BY id ASC`
         );
 
         res.json({
@@ -32,7 +33,7 @@ async function getTemplateById(req, res) {
         const { id } = req.params;
 
         const result = await pool.query(
-            'SELECT * FROM templates WHERE id = $1',
+            'SELECT * FROM templates WHERE id = $1 AND COALESCE(is_active, true) = true',
             [id]
         );
 

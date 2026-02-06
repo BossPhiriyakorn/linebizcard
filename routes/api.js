@@ -1,10 +1,29 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const timeout = require('connect-timeout');
+const { authenticateToken, requireActiveUser, requireActiveMembership } = require('../middleware/auth');
 const templateController = require('../controllers/templateController');
 const cardController = require('../controllers/cardController');
-const { uploadSingle, uploadMultiple, handleUploadError } = require('../middleware/upload');
+const packageController = require('../controllers/packageController');
+const couponController = require('../controllers/couponController');
+const paymentChannelController = require('../controllers/paymentChannelController');
+const pendingPaymentController = require('../controllers/pendingPaymentController');
+const { uploadSingle, uploadMultiple, uploadSlip, handleUploadError } = require('../middleware/upload');
+const { rateLimitCreateCard } = require('../middleware/rateLimit');
 const pool = require('../config/database');
+
+// Timeout 1 นาที สำหรับ create-card: เมื่อเกินเวลาจะส่ง 408 พร้อมข้อความชัดเจน
+function createCardTimeoutHandler(req, res, next) {
+    req.on('timeout', function () {
+        if (!res.headersSent) {
+            res.status(408).json({
+                success: false,
+                message: 'คำขอสร้างการ์ดใช้เวลานานเกินไป (1 นาที) กรุณาลองใหม่'
+            });
+        }
+    });
+    next();
+}
 
 // Health check: ตรวจสอบการเชื่อมต่อ API และฐานข้อมูล
 router.get('/health', async (req, res) => {
@@ -17,16 +36,57 @@ router.get('/health', async (req, res) => {
     }
 });
 
+// แพ็กเกจ (สำหรับลูกค้าเลือกหลังสมัคร)
+router.get('/packages', packageController.getActivePackages);
+router.post('/choose-package', authenticateToken, packageController.choosePackage);
+router.post('/validate-coupon', authenticateToken, packageController.validateCoupon);
+router.post('/create-pending-payment', authenticateToken, requireActiveUser, packageController.createPendingPayment);
+
+// ช่องทางการชำระเงิน (ลูกค้า)
+router.get('/payment-channels', authenticateToken, requireActiveUser, paymentChannelController.getMyChannels);
+router.post('/payment-channels', authenticateToken, requireActiveUser, paymentChannelController.createChannel);
+router.put('/payment-channels/:id', authenticateToken, requireActiveUser, paymentChannelController.updateChannel);
+router.delete('/payment-channels/:id', authenticateToken, requireActiveUser, paymentChannelController.deleteChannel);
+
+router.get('/payment-requests/:id', authenticateToken, requireActiveUser, pendingPaymentController.getPaymentRequest);
+router.post('/payment-requests/:id/upload-slip', authenticateToken, requireActiveUser, uploadSlip, handleUploadError, pendingPaymentController.uploadSlip);
+
+// สถานะ Payment Gateway (สำหรับตรวจสอบว่าเปิดใช้บัตรเครดิต/เดบิตได้หรือยัง)
+router.get('/payment-gateway/status', (req, res) => {
+    try {
+        const paymentGatewayService = require('../services/paymentGatewayService');
+        const status = paymentGatewayService.getStatus();
+        res.json({ success: true, data: status });
+    } catch (err) {
+        res.json({ success: true, data: { configured: false, provider: null, publicKey: null } });
+    }
+});
+
+// คูปอง (ลูกค้า)
+router.get('/coupons/my', authenticateToken, requireActiveUser, couponController.getMyCoupons);
+router.post('/coupons/save-for-next-payment', authenticateToken, requireActiveUser, couponController.saveForNextPayment);
+router.post('/coupons/redeem', authenticateToken, requireActiveUser, couponController.redeemCoupon);
+
 // Templates
 router.get('/templates', templateController.getAllTemplates);
 router.get('/templates/:id', templateController.getTemplateById);
 
-// Cards (ต้อง authenticate) - ใช้ uploadMultiple สำหรับ 2 รูปภาพ
-router.post('/create-card', authenticateToken, uploadMultiple, handleUploadError, cardController.createCard);
-router.get('/my-cards', authenticateToken, cardController.getMyCards);
-router.get('/cards/:id', authenticateToken, cardController.getCardById);
-router.put('/cards/:id', authenticateToken, uploadMultiple, handleUploadError, cardController.updateCard);
-router.delete('/cards/:id', authenticateToken, cardController.deleteCard);
+// Cards (ต้อง authenticate + ยังไม่ระงับ + สมาชิกยังไม่หมดอายุ) - สร้าง/ดู/แก้/ลบ/แชร์การ์ดใช้ไม่ได้ถ้าหมดอายุ
+router.post('/create-card',
+    rateLimitCreateCard,
+    authenticateToken,
+    requireActiveUser,
+    requireActiveMembership,
+    timeout('60s'),
+    createCardTimeoutHandler,
+    uploadMultiple,
+    handleUploadError,
+    cardController.createCard
+);
+router.get('/my-cards', authenticateToken, requireActiveUser, requireActiveMembership, cardController.getMyCards);
+router.get('/cards/:id', authenticateToken, requireActiveUser, requireActiveMembership, cardController.getCardById);
+router.put('/cards/:id', authenticateToken, requireActiveUser, requireActiveMembership, uploadMultiple, handleUploadError, cardController.updateCard);
+router.delete('/cards/:id', authenticateToken, requireActiveUser, requireActiveMembership, cardController.deleteCard);
 
 // LIFF ID
 router.get('/liff-id', (req, res) => {
@@ -44,15 +104,15 @@ router.get('/liff-login-id', (req, res) => {
     });
 });
 
-// User Profile (ต้อง authenticate)
-router.get('/user/profile', authenticateToken, async (req, res) => {
+// User Profile (ต้อง authenticate + ยังเปิดใช้งานอยู่) — รวม created_at และ membership (วันสมัคร, วันหมดอายุ, แพ็กเกจ)
+router.get('/user/profile', authenticateToken, requireActiveUser, async (req, res) => {
     try {
         const pool = require('../config/database');
         const userId = req.user.id;
 
-        // ดึงข้อมูล user profile (รวม messaging_api_user_id สำหรับ Push การ์ดใน LINE)
         const userResult = await pool.query(
-            `SELECT id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, messaging_api_user_id 
+            `SELECT id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, messaging_api_user_id, profile_image_url, created_at, 
+             COALESCE(email_verified, false) AS email_verified
             FROM users WHERE id = $1`,
             [userId]
         );
@@ -64,17 +124,48 @@ router.get('/user/profile', authenticateToken, async (req, res) => {
             });
         }
 
+        const user = userResult.rows[0];
+
         // ตรวจสอบว่ามี card อยู่แล้วหรือไม่
         const cardResult = await pool.query(
             'SELECT id, unique_id, liff_url FROM user_cards WHERE user_id = $1 LIMIT 1',
             [userId]
         );
 
+        // สมาชิกภาพ (แพ็กเกจ) — ใช้แสดงวันสมัครสมาชิก, วันหมดอายุ, แพ็กเกจ
+        let membership = null;
+        let remainingDays = null;
+        try {
+            const memResult = await pool.query(
+                `SELECT m.id, m.membership_type, m.start_date, m.end_date, m.status, p.name AS package_name,
+                 GREATEST(0, EXTRACT(EPOCH FROM (m.end_date - CURRENT_TIMESTAMP)) / 86400)::INTEGER AS remaining_days
+                 FROM memberships m 
+                 LEFT JOIN packages p ON p.id = m.package_id 
+                 WHERE m.user_id = $1 AND m.status = 'active' AND m.end_date > CURRENT_TIMESTAMP 
+                 ORDER BY m.end_date DESC LIMIT 1`,
+                [userId]
+            );
+            if (memResult.rows.length > 0) {
+                membership = memResult.rows[0];
+                remainingDays = membership.remaining_days;
+            }
+        } catch (e) {
+            // ตาราง memberships หรือ packages อาจยังไม่มี
+        }
+
         res.json({
             success: true,
-            data: userResult.rows[0],
-            has_card: cardResult.rows.length > 0,
-            existing_card: cardResult.rows[0] || null
+            data: {
+                ...user,
+                has_card: cardResult.rows.length > 0,
+                existing_card: cardResult.rows[0] || null,
+                membership: membership ? {
+                    package_name: membership.package_name || membership.membership_type,
+                    start_date: membership.start_date,
+                    end_date: membership.end_date,
+                    remaining_days: remainingDays
+                } : null
+            }
         });
     } catch (error) {
         console.error('Get user profile error:', error);
@@ -85,37 +176,23 @@ router.get('/user/profile', authenticateToken, async (req, res) => {
     }
 });
 
-// บันทึก Messaging API User ID (สำหรับ Push การ์ดไป LINE) — ต้อง authenticate
-router.put('/user/messaging-api-user-id', authenticateToken, async (req, res) => {
+// ยกเลิกแพ็กเกจปัจจุบัน (ลูกค้า) — ตั้งสมาชิกภาพเป็น cancelled และ end_date = วันนี้
+router.post('/cancel-membership', authenticateToken, requireActiveUser, async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { messaging_api_user_id } = req.body;
-        if (!messaging_api_user_id || typeof messaging_api_user_id !== 'string') {
-            return res.status(400).json({
-                success: false,
-                message: 'กรุณาส่ง messaging_api_user_id (User ID จาก Messaging API Channel)'
-            });
-        }
-        await pool.query(
-            'UPDATE users SET messaging_api_user_id = $1 WHERE id = $2',
-            [messaging_api_user_id.trim(), userId]
+        const userId = parseInt(req.user?.id, 10);
+        if (isNaN(userId)) return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' });
+        const result = await pool.query(
+            `UPDATE memberships SET status = 'cancelled', end_date = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+             WHERE user_id = $1 AND status = 'active' RETURNING id`,
+            [userId]
         );
-        res.json({
-            success: true,
-            message: 'บันทึก Messaging API User ID เรียบร้อย — ระบบจะส่งการ์ดให้คุณใน LINE เมื่อสร้างการ์ดเสร็จ'
-        });
-    } catch (error) {
-        if (error.code === '42703') {
-            return res.status(503).json({
-                success: false,
-                message: 'ยังไม่ได้รัน migration สำหรับ messaging_api_user_id — รัน database/add_messaging_api_user_id.sql'
-            });
+        if (result.rows.length === 0) {
+            return res.status(400).json({ success: false, message: 'ไม่พบแพ็กเกจที่ใช้งานอยู่ หรือยกเลิกแล้ว' });
         }
-        console.error('Save messaging_api_user_id error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'เกิดข้อผิดพลาด: ' + error.message
-        });
+        res.json({ success: true, message: 'ยกเลิกแพ็กเกจแล้ว' });
+    } catch (err) {
+        console.error('Cancel membership error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
     }
 });
 

@@ -1,6 +1,7 @@
 const pool = require('../config/database');
-const { exchangeCodeForToken, verifyIdToken } = require('../services/lineService');
+const { exchangeCodeForToken, verifyIdToken, getUserProfile } = require('../services/lineService');
 const { generateToken } = require('../middleware/auth');
+const { addCmsNotification } = require('../utils/cmsNotification');
 const crypto = require('crypto');
 
 /**
@@ -29,6 +30,16 @@ async function lineCallback(req, res) {
         const lineUserId = idTokenData.sub; // LINE User ID
         const displayName = idTokenData.name || 'LINE User';
         const email = idTokenData.email || null;
+        // รูปโปรไฟล์จาก LINE: ID token อาจมี picture หรือดึงจาก Profile API
+        let profileImageUrl = idTokenData.picture || null;
+        if (!profileImageUrl && access_token) {
+            try {
+                const lineProfile = await getUserProfile(access_token);
+                profileImageUrl = lineProfile.pictureUrl || lineProfile.picture || null;
+            } catch (e) {
+                // ข้ามถ้าดึง profile ไม่ได้
+            }
+        }
 
         // ค้นหาหรือสร้าง user ใน database
         let user;
@@ -38,17 +49,22 @@ async function lineCallback(req, res) {
         );
 
         if (existingUser.rows.length > 0) {
-            // User มีอยู่แล้ว - อัปเดตข้อมูล
+            // User มีอยู่แล้ว - อัปเดตข้อมูล (รวมรูปโปรไฟล์จาก LINE)
             user = existingUser.rows[0];
+            // ถ้าบัญชีถูกระงับ → ห้ามเข้าสู่ระบบ
+            if (user.is_active === false) {
+                const baseUrl = process.env.BASE_URL || (req.protocol + '://' + req.get('host'));
+                return res.redirect(baseUrl + '/liff/login?error=' + encodeURIComponent('บัญชีถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ'));
+            }
             await pool.query(
-                'UPDATE users SET username = $1, email = $2, login_type = $3 WHERE line_user_id = $4',
-                [displayName, email || user.email, 'line', lineUserId]
+                'UPDATE users SET username = $1, email = $2, login_type = $3, profile_image_url = $4 WHERE line_user_id = $5',
+                [displayName, email || user.email, 'line', profileImageUrl || user.profile_image_url, lineUserId]
             );
         } else {
             // สร้าง user ใหม่ (ยังไม่กรอกข้อมูล profile)
             const result = await pool.query(
-                `INSERT INTO users (username, email, password, line_user_id, login_type, is_profile_complete) 
-                VALUES ($1, $2, $3, $4, $5, $6) 
+                `INSERT INTO users (username, email, password, line_user_id, login_type, is_profile_complete, profile_image_url) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7) 
                 RETURNING id, username, email, line_user_id, login_type, is_profile_complete`,
                 [
                     displayName,
@@ -56,10 +72,18 @@ async function lineCallback(req, res) {
                     crypto.randomBytes(32).toString('hex'), // Random password (ไม่ใช้สำหรับ LINE login)
                     lineUserId,
                     'line',
-                    false // ยังไม่กรอกข้อมูล profile
+                    false, // ยังไม่กรอกข้อมูล profile
+                    profileImageUrl
                 ]
             );
             user = result.rows[0];
+            addCmsNotification(pool, {
+                notification_type: 'new_signup',
+                title: 'ลูกค้าสมัครใหม่ (LINE)',
+                message: `${user.username}`,
+                link_url: '/cms/users',
+                related_user_id: user.id
+            }).catch(() => {});
         }
 
         // สร้าง JWT token
@@ -159,18 +183,14 @@ async function lineCallback(req, res) {
             return;
         }
 
-        // Logic ปกติ: redirect ตามสถานะ user
+        // Logic ปกติ: redirect ตามสถานะ user — หลังล็อกอินมาหน้าแรกเสมอ (ยกเว้นลูกค้าใหม่ที่ยังไม่กรอกโปรไฟล์)
         if (!isProfileComplete) {
             // ลูกค้าใหม่ → หน้าลงทะเบียน
             const redirectUrl = `${baseUrl}/register-line?token=${token}&line_user_id=${lineUserId}`;
             res.redirect(redirectUrl);
-        } else if (hasCard) {
-            // ลูกค้าเก่าที่มีการ์ดแล้ว → หน้าดูการ์ดของตัวเอง
-            const redirectUrl = `${baseUrl}/my-cards?token=${token}`;
-            res.redirect(redirectUrl);
         } else {
-            // ลูกค้าเก่าที่ยังไม่มีการ์ด → หน้าสร้างการ์ด
-            const redirectUrl = `${baseUrl}/create?token=${token}`;
+            // ลูกค้าที่กรอกโปรไฟล์แล้ว → หน้าแรกเสมอ
+            const redirectUrl = `${baseUrl}/home?token=${token}`;
             res.redirect(redirectUrl);
         }
 
@@ -264,13 +284,23 @@ async function completeProfile(req, res) {
             });
         }
 
-        // อัปเดตข้อมูล user
+        // ดึงอีเมลเดิมเพื่อเช็กว่ามีการเปลี่ยนหรือไม่ — ถ้าเปลี่ยนให้ถือว่ายังไม่ยืนยันตัวตน
+        const current = await pool.query(
+            'SELECT email, email_verified, email_verified_at FROM users WHERE id = $1',
+            [userId]
+        );
+        const currentEmail = current.rows[0]?.email;
+        const emailChanged = currentEmail != null && currentEmail.trim().toLowerCase() !== String(email).trim().toLowerCase();
+        const newEmailVerified = emailChanged ? false : (current.rows[0]?.email_verified ?? false);
+        const newEmailVerifiedAt = emailChanged ? null : (current.rows[0]?.email_verified_at ?? null);
+
+        // อัปเดตข้อมูล user (บรรทัดเดียวกัน — ถ้าอีเมลเปลี่ยน ตั้ง email_verified = false, email_verified_at = NULL)
         const result = await pool.query(
             `UPDATE users 
-            SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6
+            SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6, email_verified = $8, email_verified_at = $9
             WHERE id = $7
             RETURNING id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, is_profile_complete`,
-            [first_name, last_name, nickname, phone, email, true, userId]
+            [first_name, last_name, nickname, phone, email, true, userId, newEmailVerified, newEmailVerifiedAt]
         );
 
         if (result.rows.length === 0) {
@@ -281,6 +311,32 @@ async function completeProfile(req, res) {
         }
 
         const user = result.rows[0];
+
+        // ลูกค้าใหม่ที่กรอกข้อมูลครบ → สร้างสมาชิกภาพแพ็กเกจฟรี 3 วันอัตโนมัติ (ถ้ายังไม่มี)
+        try {
+            const hasActive = await pool.query(
+                'SELECT id FROM memberships WHERE user_id = $1 AND status = $2 LIMIT 1',
+                [userId, 'active']
+            );
+            if (hasActive.rows.length === 0) {
+                const freePkg = await pool.query(
+                    "SELECT id, name, duration_days FROM packages WHERE (name = 'ฟรี' OR id = 1) AND COALESCE(is_active, true) = true LIMIT 1"
+                );
+                if (freePkg.rows.length > 0) {
+                    const pkg = freePkg.rows[0];
+                    const startDate = new Date();
+                    const endDate = new Date(startDate);
+                    endDate.setDate(endDate.getDate() + (parseInt(pkg.duration_days, 10) || 3));
+                    await pool.query(
+                        `INSERT INTO memberships (user_id, membership_type, start_date, end_date, status, package_id) 
+                         VALUES ($1, $2, $3, $4, 'active', $5)`,
+                        [userId, pkg.name, startDate, endDate, pkg.id]
+                    );
+                }
+            }
+        } catch (e) {
+            console.error('Create free membership on complete-profile:', e);
+        }
 
         res.json({
             success: true,

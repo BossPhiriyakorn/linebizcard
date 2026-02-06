@@ -4,7 +4,7 @@ const path = require('path');
 require('dotenv').config();
 const { generateUniqueId, getJsonFileName } = require('../utils/uniqueId');
 const { replaceTemplatePlaceholders, createFlexMessageJson } = require('../utils/templateEngine');
-const { pushFlexMessage } = require('../services/lineService');
+const { convertUploadedToWebp } = require('../utils/imageToWebp');
 
 // สร้างโฟลเดอร์ json ถ้ายังไม่มี
 const jsonDir = path.join(__dirname, '../json');
@@ -16,6 +16,7 @@ fs.ensureDirSync(jsonDir);
 async function createCard(req, res) {
     let jsonWrittenPath = null; // ใช้ลบไฟล์ถ้า INSERT ล้มเหลว
     try {
+        if (req.timedout) return; // connect-timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
         const userId = parseInt(req.user.id, 10);
         if (isNaN(userId)) {
             return res.status(401).json({
@@ -31,24 +32,6 @@ async function createCard(req, res) {
             return res.status(400).json({
                 success: false,
                 message: 'กรุณาเลือก template และกรอกชื่อ'
-            });
-        }
-
-        // ตรวจสอบว่าผู้ใช้มี card อยู่แล้วหรือไม่ (จำกัด 1 คน 1 การ์ด)
-        const existingCard = await pool.query(
-            'SELECT id, unique_id, liff_url FROM user_cards WHERE user_id = $1 LIMIT 1',
-            [userId]
-        );
-
-        if (existingCard.rows.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'คุณมี card อยู่แล้ว (จำกัด 1 คน 1 การ์ด)',
-                existing_card: {
-                    id: existingCard.rows[0].id,
-                    unique_id: existingCard.rows[0].unique_id,
-                    liff_url: existingCard.rows[0].liff_url
-                }
             });
         }
 
@@ -76,6 +59,37 @@ async function createCard(req, res) {
             });
         }
 
+        // คำนวณ expires_at: ถ้ามีสมาชิก active ใช้ end_date ของสมาชิก ไม่เช่นนั้นใช้ +30 วัน
+        let expiresAt = null;
+        try {
+            const membershipResult = await pool.query(
+                `SELECT end_date FROM memberships 
+                 WHERE user_id = $1 AND status = 'active' AND end_date > CURRENT_TIMESTAMP 
+                 ORDER BY end_date DESC LIMIT 1`,
+                [userId]
+            );
+            if (membershipResult.rows.length > 0 && membershipResult.rows[0].end_date) {
+                expiresAt = membershipResult.rows[0].end_date;
+            } else {
+                const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                expiresAt = thirtyDaysFromNow;
+            }
+        } catch (membershipErr) {
+            // ถ้าตาราง memberships ยังไม่มี ใช้ +30 วัน
+            const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            expiresAt = thirtyDaysFromNow;
+        }
+
+        const cardType = (template.card_type && ['normal', 'special', 'event'].includes(String(template.card_type).toLowerCase()))
+            ? String(template.card_type).toLowerCase()
+            : 'normal';
+
+        // การ์ดพิเศษ/เทศกาล: ถ้าแทมเพลตกำหนด default_expires_at ใช้ค่านั้น
+        if ((cardType === 'special' || cardType === 'event') && template.default_expires_at) {
+            const templateExpiry = new Date(template.default_expires_at);
+            if (!isNaN(templateExpiry.getTime())) expiresAt = templateExpiry;
+        }
+
         // ดึงข้อมูล user profile เพื่อใช้เป็นค่าเริ่มต้น (รองรับทั้งตารางที่มีและไม่มีคอลัมน์โปรไฟล์)
         let profile = {};
         try {
@@ -93,6 +107,19 @@ async function createCard(req, res) {
             );
             const row = basicProfile.rows[0];
             if (row) profile = { email: row.email };
+        }
+
+        // แปลงรูปที่อัปโหลดเป็น WebP (ไม่ปรับขนาด) เพื่อลดขนาดไฟล์
+        if (req.file || req.files) {
+            try {
+                await convertUploadedToWebp(req);
+            } catch (err) {
+                console.error('Convert to WebP error:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
+                });
+            }
         }
 
         // สร้าง image URLs (รองรับ 2 รูปภาพ: image1 และ image2)
@@ -119,6 +146,8 @@ async function createCard(req, res) {
         const fullName = name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || '';
         
         // สร้าง unique ID และ LIFF URL ก่อน (ใช้ใน template ปุ่มแชร์)
+        // หมายเหตุ: LIFF_ID ต้องเป็น LIFF app ที่ตั้ง Endpoint URL = BASE_URL/share และเปิด shareTargetPicker
+        // ถ้ากดปุ่มแชร์บนการ์ดแล้วไปแอปแทนที่จะเด้ง share picker ให้ดู docs/LIFF_SHARE_TROUBLESHOOTING.md
         const uniqueId = generateUniqueId();
         const liffUrl = `https://liff.line.me/${process.env.LIFF_ID || ''}?name=${uniqueId}&id=1`;
         
@@ -168,11 +197,11 @@ async function createCard(req, res) {
         await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
         jsonWrittenPath = jsonFilePath;
 
-        // บันทึกลง Database
+        // บันทึกลง Database (expires_at ตามสมาชิกหรือ +30 วัน, card_type ตาม template)
         const insertResult = await pool.query(
             `INSERT INTO user_cards 
-            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *`,
             [
                 uniqueId,
@@ -185,7 +214,9 @@ async function createCard(req, res) {
                 imageUrl1 || null,
                 description || null,
                 JSON.stringify(flexMessageJson),
-                liffUrl
+                liffUrl,
+                expiresAt,
+                cardType
             ]
         );
 
@@ -194,23 +225,7 @@ async function createCard(req, res) {
             console.log('Card created: id=%s user_id=%s unique_id=%s', card.id, userId, card.unique_id);
         }
 
-        // ส่งการ์ดให้ลูกค้าใน LINE (Messaging API Channel) — ใช้ messaging_api_user_id ก่อน ถ้าไม่มีใช้ line_user_id
-        try {
-            const userRow = await pool.query(
-                'SELECT messaging_api_user_id, line_user_id FROM users WHERE id = $1',
-                [userId]
-            );
-            const pushToId = userRow.rows[0]?.messaging_api_user_id || userRow.rows[0]?.line_user_id;
-            if (pushToId) {
-                pushFlexMessage(pushToId, flexMessage, altText).then(ok => {
-                    if (ok) console.log('ส่งการ์ดให้ลูกค้าใน LINE สำเร็จ:', pushToId);
-                }).catch(() => {});
-            }
-        } catch (pushErr) {
-            // ถ้ายังไม่มีคอลัมน์ messaging_api_user_id หรือ query ล้มเหลว — ข้าม push
-            if (pushErr.code !== '42703') console.error('Push card to LINE skip:', pushErr.message);
-        }
-
+        if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
         res.status(201).json({
             success: true,
             message: 'สร้างการ์ดสำเร็จ',
@@ -219,7 +234,8 @@ async function createCard(req, res) {
                 unique_id: card.unique_id,
                 liff_url: card.liff_url,
                 json_file_name: card.json_file_name,
-                created_at: card.created_at
+                created_at: card.created_at,
+                expires_at: card.expires_at
             }
         });
     } catch (error) {
@@ -232,6 +248,7 @@ async function createCard(req, res) {
         const msg = process.env.NODE_ENV !== 'production' && dbDetail
             ? `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message} (${dbDetail})`
             : `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message}`;
+        if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
         res.status(500).json({
             success: false,
             message: msg
@@ -255,7 +272,7 @@ async function getMyCards(req, res) {
         const result = await pool.query(
             `SELECT 
                 id, unique_id, template_id, user_name, user_phone, user_email, 
-                user_image, liff_url, created_at, updated_at,
+                user_image, liff_url, created_at, updated_at, expires_at, card_type,
                 (SELECT name FROM templates WHERE id = user_cards.template_id) as template_name
             FROM user_cards 
             WHERE user_id = $1 
@@ -364,6 +381,19 @@ async function updateCard(req, res) {
                 success: false,
                 message: 'Template JSON ไม่ถูกต้อง'
             });
+        }
+
+        // แปลงรูปที่อัปโหลดเป็น WebP (ไม่ปรับขนาด) เพื่อลดขนาดไฟล์
+        if (req.files && (req.files.image1?.[0] || req.files.image2?.[0])) {
+            try {
+                await convertUploadedToWebp(req);
+            } catch (err) {
+                console.error('Convert to WebP error:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
+                });
+            }
         }
 
         let imageUrl1 = card.user_image || '';

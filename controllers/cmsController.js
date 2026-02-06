@@ -1,0 +1,1173 @@
+const path = require('path');
+const pool = require('../config/database');
+const bcrypt = require('bcrypt');
+const { generateToken } = require('../middleware/auth');
+const { addCmsNotification } = require('../utils/cmsNotification');
+const { convertToWebp } = require('../utils/imageToWebp');
+
+/**
+ * CMS Login: อีเมล + รหัสผ่าน — ตรวจจากตาราง admins
+ */
+async function cmsLogin(req, res) {
+    try {
+        const { email, password } = req.body || {};
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณากรอกอีเมลและรหัสผ่าน'
+            });
+        }
+        const result = await pool.query(
+            'SELECT id, username, email, password, COALESCE(is_active, true) AS is_active FROM admins WHERE email = $1',
+            [email.trim()]
+        );
+        if (result.rows.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'
+            });
+        }
+        const admin = result.rows[0];
+        if (admin.is_active !== true) {
+            return res.status(403).json({
+                success: false,
+                message: 'บัญชีถูกระงับการใช้งาน'
+            });
+        }
+        const match = await bcrypt.compare(password, admin.password);
+        if (!match) {
+            return res.status(401).json({
+                success: false,
+                message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'
+            });
+        }
+        const ip = (req.headers['x-forwarded-for'] && req.headers['x-forwarded-for'].split(',')[0].trim()) || req.ip || req.socket?.remoteAddress || null;
+        try {
+            await pool.query(
+                'INSERT INTO login_logs (admin_id, username, email, ip_address) VALUES ($1, $2, $3, $4)',
+                [admin.id, admin.username, admin.email, ip]
+            );
+        } catch (logErr) {
+            console.error('Login log insert error:', logErr.message);
+        }
+        addCmsNotification(pool, {
+            notification_type: 'admin_login',
+            title: 'แอดมินเข้าใช้งาน',
+            message: `${admin.username || admin.email} (${ip || 'N/A'})`,
+            link_url: '/cms/login-history',
+            related_admin_id: admin.id
+        }).catch(() => {});
+        const token = generateToken({ id: admin.id, username: admin.username, email: admin.email });
+        res.json({
+            success: true,
+            token: token,
+            user: { id: admin.id, username: admin.username, email: admin.email }
+        });
+    } catch (err) {
+        console.error('CMS login error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ'
+        });
+    }
+}
+
+/**
+ * Dashboard: users_count, templates_count, cards_count, notifications_count (จำนวนการเข้าใช้งานล่าสุด 7 วัน)
+ */
+async function getDashboard(req, res) {
+    try {
+        const usersResult = await pool.query('SELECT COUNT(*) AS c FROM users');
+        const templatesResult = await pool.query(
+            'SELECT COUNT(*) AS c FROM templates WHERE COALESCE(is_active, true) = true'
+        );
+        const cardsResult = await pool.query('SELECT COUNT(*) AS c FROM user_cards');
+        const notificationsResult = await pool.query('SELECT COUNT(*) AS c FROM cms_notifications');
+        res.json({
+            success: true,
+            data: {
+                users_count: parseInt(usersResult.rows[0]?.c ?? 0, 10),
+                templates_count: parseInt(templatesResult.rows[0]?.c ?? 0, 10),
+                cards_count: parseInt(cardsResult.rows[0]?.c ?? 0, 10),
+                notifications_count: parseInt(notificationsResult.rows[0]?.c ?? 0, 10)
+            }
+        });
+    } catch (err) {
+        console.error('CMS dashboard error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'โหลดข้อมูลไม่สำเร็จ'
+        });
+    }
+}
+
+/**
+ * รายการแจ้งเตือนสำหรับแดชบอร์ด CMS (แบบเลื่อนดูได้)
+ */
+async function getNotifications(req, res) {
+    try {
+        const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+        const result = await pool.query(
+            `SELECT id, notification_type, title, message, link_url, related_user_id, related_card_id, related_admin_id, related_pending_payment_id, created_at, is_read
+             FROM cms_notifications
+             ORDER BY created_at DESC
+             LIMIT $1`,
+            [limit]
+        );
+        res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error('CMS getNotifications error:', err);
+        res.status(500).json({ success: false, message: 'โหลดแจ้งเตือนไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายการแทมเพลต (รวมที่ปิดใช้) สำหรับ CMS
+ */
+async function getTemplates(req, res) {
+    try {
+        const result = await pool.query(
+            'SELECT id, name, description, preview_image, sample_image_urls, COALESCE(card_type, \'normal\') AS card_type, default_expires_at, COALESCE(is_active, true) AS is_active, created_at, updated_at FROM templates ORDER BY id ASC'
+        );
+        res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error('CMS get templates error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แกมเพลตเดียว (สำหรับแก้ไข)
+ */
+async function getTemplateById(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const result = await pool.query('SELECT * FROM templates WHERE id = $1', [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแทมเพลต' });
+        }
+        const row = result.rows[0];
+        const template_json = typeof row.template_json === 'string' ? row.template_json : JSON.stringify(row.template_json);
+        res.json({
+            success: true,
+            data: {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                preview_image: row.preview_image,
+                sample_image_urls: row.sample_image_urls,
+                template_json: template_json,
+                card_type: row.card_type || 'normal',
+                default_expires_at: row.default_expires_at || null,
+                is_active: row.is_active !== false,
+                created_at: row.created_at,
+                updated_at: row.updated_at
+            }
+        });
+    } catch (err) {
+        console.error('CMS get template error:', err);
+        res.status(500).json({ success: false, message: 'โหลดข้อมูลไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รวม template_json กับข้อความส่งการ (linemsg)
+ * - ถ้าวาง JSON แบบเต็ม (มี tectony1) ใช้โครงนั้น แล้วใส่ linemsg จาก send_message
+ * - ถ้าวางแค่ส่วน Flex Message (ไม่มี tectony1) ระบบห่อให้เป็น tectony1: [{ linemsg }, flexContent]
+ */
+function assembleTemplateJson(templateJson, sendMessage) {
+    const parsed = typeof templateJson === 'string' ? JSON.parse(templateJson) : templateJson;
+    const linemsg = (sendMessage && String(sendMessage).trim()) ? String(sendMessage).trim() : 'การ์ดของ {name}';
+    if (parsed.tectony1 && Array.isArray(parsed.tectony1) && parsed.tectony1[1] != null) {
+        const out = { tectony1: [...parsed.tectony1] };
+        out.tectony1[0] = (typeof out.tectony1[0] === 'object' && out.tectony1[0] !== null)
+            ? { ...out.tectony1[0], linemsg }
+            : { linemsg };
+        return out;
+    }
+    return { tectony1: [{ linemsg }, parsed] };
+}
+
+/**
+ * เพิ่มแทมเพลต (รับ name, description, template_json, send_message)
+ * template_json: วางได้ทั้งโครงเต็ม (tectony1) หรือแค่ส่วน Flex Message จาก Flex Simulator
+ * send_message: ข้อความแสดงตอนส่งการ (เช่น "การ์ดของ {name}") ระบบจะประกอบให้
+ */
+async function createTemplate(req, res) {
+    try {
+        const { name, description, template_json, send_message, sample_image_urls, card_type, default_expires_at } = req.body || {};
+        if (!name || template_json === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณากรอกชื่อและ JSON แทมเพลต'
+            });
+        }
+        let jsonObj;
+        try {
+            jsonObj = assembleTemplateJson(template_json, send_message);
+        } catch (e) {
+            return res.status(400).json({
+                success: false,
+                message: 'รูปแบบ JSON ไม่ถูกต้อง หรือวางเฉพาะส่วน Flex Message จาก Flex Simulator'
+            });
+        }
+        if (!jsonObj.tectony1 || !Array.isArray(jsonObj.tectony1) || jsonObj.tectony1[1] == null) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณาวางโค้ด JSON ส่วน Flex Message จาก Flex Simulator'
+            });
+        }
+        const jsonString = JSON.stringify(jsonObj, null, 0);
+        const sampleUrlsJson = Array.isArray(sample_image_urls) ? JSON.stringify(sample_image_urls) : (sample_image_urls != null && typeof sample_image_urls === 'string' ? sample_image_urls : '[]');
+        const templateCardType = (card_type === 'special' || card_type === 'event') ? String(card_type).toLowerCase() : 'normal';
+        const defaultExpires = (default_expires_at && String(default_expires_at).trim()) ? new Date(String(default_expires_at).trim()) : null;
+        const result = await pool.query(
+            'INSERT INTO templates (name, description, template_json, sample_image_urls, card_type, default_expires_at, is_active) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id, name, description, card_type, default_expires_at, is_active, created_at',
+            [name.trim(), description ? description.trim() : null, jsonString, sampleUrlsJson, templateCardType, defaultExpires]
+        );
+        res.status(201).json({
+            success: true,
+            message: 'เพิ่มแทมเพลตแล้ว',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        if (err.message && err.message.includes('JSON')) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+        console.error('CMS create template error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แก้ไขแทมเพลต (รับ send_message ด้วย ระบบประกอบ linemsg ให้)
+ */
+async function updateTemplate(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const { name, description, template_json, send_message, sample_image_urls, card_type, default_expires_at } = req.body || {};
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        if (!name || template_json === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณากรอกชื่อและ JSON แทมเพลต'
+            });
+        }
+        let jsonObj;
+        try {
+            jsonObj = assembleTemplateJson(template_json, send_message);
+        } catch (e) {
+            return res.status(400).json({
+                success: false,
+                message: 'รูปแบบ JSON ไม่ถูกต้อง หรือวางเฉพาะส่วน Flex Message จาก Flex Simulator'
+            });
+        }
+        if (!jsonObj.tectony1 || !Array.isArray(jsonObj.tectony1) || jsonObj.tectony1[1] == null) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณาวางโค้ด JSON ส่วน Flex Message จาก Flex Simulator'
+            });
+        }
+        const jsonString = JSON.stringify(jsonObj, null, 0);
+        const sampleUrlsJson = Array.isArray(sample_image_urls) ? JSON.stringify(sample_image_urls) : (sample_image_urls != null && typeof sample_image_urls === 'string' ? sample_image_urls : null);
+        const templateCardType = (card_type === 'special' || card_type === 'event') ? String(card_type).toLowerCase() : 'normal';
+        const defaultExpires = (default_expires_at && String(default_expires_at).trim()) ? new Date(String(default_expires_at).trim()) : null;
+        await pool.query(
+            'UPDATE templates SET name = $1, description = $2, template_json = $3, sample_image_urls = COALESCE($4, sample_image_urls), card_type = $5, default_expires_at = $6 WHERE id = $7',
+            [name.trim(), description ? description.trim() : null, jsonString, sampleUrlsJson, templateCardType, defaultExpires, id]
+        );
+        res.json({ success: true, message: 'แก้ไขแล้ว' });
+    } catch (err) {
+        if (err.message && err.message.includes('JSON')) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+        console.error('CMS update template error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+/**
+ * สลับสถานะเปิดใช้/ปิดใช้ (ไม่ลบ แค่ซ่อนจากผู้ใช้)
+ */
+async function toggleTemplate(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const current = await pool.query('SELECT COALESCE(is_active, true) AS is_active FROM templates WHERE id = $1', [id]);
+        if (current.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแทมเพลต' });
+        }
+        const newActive = !current.rows[0].is_active;
+        await pool.query('UPDATE templates SET is_active = $1 WHERE id = $2', [newActive, id]);
+        res.json({
+            success: true,
+            message: newActive ? 'เปิดใช้แล้ว' : 'ปิดใช้แล้ว',
+            data: { is_active: newActive }
+        });
+    } catch (err) {
+        console.error('CMS toggle template error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายการผู้ใช้ (ลูกค้า) สำหรับ CMS — จากตาราง users เท่านั้น
+ */
+async function getUsers(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT id, username, email, first_name, last_name, phone, login_type, 
+             COALESCE(is_active, true) AS is_active, COALESCE(email_verified, false) AS email_verified, created_at 
+             FROM users ORDER BY id ASC`
+        );
+        const rows = Array.isArray(result.rows) ? result.rows : [];
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('CMS get users error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายละเอียดลูกค้าเดียว — ข้อมูลส่วนตัว, สมาชิก (แพ็กเกจ/วันหมดอายุ), รายการการ์ดที่สร้าง
+ * ใช้: users (id, username, email, first_name, last_name, phone, nickname, profile_image_url, is_active, created_at),
+ *      memberships (membership_type, start_date, end_date) ถ้ามี,
+ *      user_cards + templates สำหรับรายการการ์ด
+ * รัน schema-full.sql หรือ node scripts/setup-database.js ถ้าฐานข้อมูลเก่าไม่มี profile_image_url, nickname, memberships
+ */
+async function getUserById(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const userResult = await pool.query(
+            `SELECT id, username, email, first_name, last_name, phone, nickname, login_type, 
+             COALESCE(is_active, true) AS is_active, COALESCE(email_verified, false) AS email_verified, created_at, profile_image_url 
+             FROM users WHERE id = $1`,
+            [userId]
+        );
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
+        }
+        const user = userResult.rows[0];
+
+        let membership = null;
+        try {
+            const memResult = await pool.query(
+                `SELECT m.id, m.membership_type, m.start_date, m.end_date, m.status, m.package_id, m.created_at,
+                 p.name AS package_name,
+                 GREATEST(0, EXTRACT(EPOCH FROM (m.end_date - CURRENT_TIMESTAMP)) / 86400)::INTEGER AS remaining_days
+                 FROM memberships m
+                 LEFT JOIN packages p ON p.id = m.package_id
+                 WHERE m.user_id = $1 AND m.status = 'active' AND m.end_date > CURRENT_TIMESTAMP 
+                 ORDER BY m.end_date DESC LIMIT 1`,
+                [userId]
+            );
+            if (memResult.rows.length > 0) membership = memResult.rows[0];
+        } catch (e) {
+            // ตาราง memberships อาจยังไม่มี
+        }
+
+        let cards = [];
+        try {
+            const cardsResult = await pool.query(
+                `SELECT uc.id, uc.unique_id, uc.user_name, uc.liff_url, uc.created_at, uc.expires_at, uc.card_type,
+                  t.name AS template_name
+                 FROM user_cards uc
+                 LEFT JOIN templates t ON t.id = uc.template_id
+                 WHERE uc.user_id = $1 ORDER BY uc.created_at DESC`,
+                [userId]
+            );
+            cards = Array.isArray(cardsResult.rows) ? cardsResult.rows : [];
+        } catch (e) {
+            console.error('CMS getUserById cards error:', e.message);
+        }
+
+        res.json({
+            success: true,
+            data: {
+                user,
+                membership,
+                cards
+            }
+        });
+    } catch (err) {
+        console.error('CMS getUserById error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายละเอียดไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ช่องทางการชำระเงินของลูกค้า (สำหรับ CMS แสดงในรายละเอียดผู้ใช้)
+ */
+async function getUserPaymentChannels(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query(
+            `SELECT id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, created_at, updated_at
+             FROM payment_channels WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC`,
+            [userId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error('CMS getUserPaymentChannels error:', err);
+        res.status(500).json({ success: false, message: 'โหลดช่องทางการชำระเงินไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายการรอตรวจสอบการชำระ (QR แนบสลิปแล้ว) ของลูกค้า
+ */
+async function getUserPendingPayments(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query(
+            `SELECT pp.id, pp.user_id, pp.package_id, pp.amount, pp.original_amount, pp.discount_amount, pp.extra_days, pp.status, pp.slip_image_url, pp.slip_uploaded_at, pp.created_at, p.name AS package_name
+             FROM pending_payments pp
+             LEFT JOIN packages p ON p.id = pp.package_id
+             WHERE pp.user_id = $1 AND pp.status IN ('pending', 'slip_uploaded')
+             ORDER BY pp.created_at DESC`,
+            [userId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error('CMS getUserPendingPayments error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการรอตรวจสอบไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ยืนยันหรือปฏิเสธการชำระ (QR) — เมื่อยืนยันจะสร้างสมาชิก + payment_history
+ */
+async function verifyPendingPayment(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const { action, rejection_reason } = req.body || {};
+        const adminId = req.adminUser?.id;
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        if (action !== 'approve' && action !== 'reject') {
+            return res.status(400).json({ success: false, message: 'ระบุ action เป็น approve หรือ reject' });
+        }
+        const row = await pool.query(
+            'SELECT id, user_id, package_id, amount, original_amount, discount_amount, extra_days, coupon_id, status FROM pending_payments WHERE id = $1',
+            [id]
+        );
+        if (row.rows.length === 0) return res.status(404).json({ success: false, message: 'ไม่พบรายการ' });
+        const pending = row.rows[0];
+        if (pending.status !== 'pending' && pending.status !== 'slip_uploaded') {
+            return res.status(400).json({ success: false, message: 'รายการนี้ตรวจสอบแล้ว' });
+        }
+        if (action === 'reject') {
+            await pool.query(
+                `UPDATE pending_payments SET status = 'rejected', rejection_reason = $1, verified_at = CURRENT_TIMESTAMP, verified_by_admin_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+                [rejection_reason != null ? String(rejection_reason).trim() : null, adminId != null ? adminId : null, id]
+            );
+            return res.json({ success: true, message: 'ปฏิเสธรายการแล้ว' });
+        }
+        const pkgRow = await pool.query('SELECT id, name, duration_days FROM packages WHERE id = $1', [pending.package_id]);
+        if (pkgRow.rows.length === 0) return res.status(400).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
+        const pkg = pkgRow.rows[0];
+        const baseDays = parseInt(pkg.duration_days, 10) || 0;
+        const durationDays = baseDays + (parseInt(pending.extra_days, 10) || 0);
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + durationDays);
+        const existing = await pool.query('SELECT id FROM memberships WHERE user_id = $1 AND status = $2 LIMIT 1', [pending.user_id, 'active']);
+        let membershipId = null;
+        const paymentType = existing.rows.length > 0 ? 'renew' : 'purchase';
+        if (existing.rows.length > 0) {
+            membershipId = existing.rows[0].id;
+            await pool.query(
+                `UPDATE memberships SET membership_type = $1, start_date = $2, end_date = $3, package_id = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`,
+                [pkg.name, startDate, endDate, pending.package_id, membershipId]
+            );
+        } else {
+            const ins = await pool.query(
+                `INSERT INTO memberships (user_id, membership_type, start_date, end_date, status, package_id) VALUES ($1, $2, $3, $4, 'active', $5) RETURNING id`,
+                [pending.user_id, pkg.name, startDate, endDate, pending.package_id]
+            );
+            membershipId = ins.rows[0].id;
+        }
+        const origAmount = pending.original_amount != null ? pending.original_amount : pending.amount;
+        const discAmount = pending.discount_amount != null ? pending.discount_amount : 0;
+        const extraDaysVal = pending.extra_days != null ? parseInt(pending.extra_days, 10) : null;
+        await pool.query(
+            `INSERT INTO payment_history (user_id, package_id, amount, original_amount, discount_amount, extra_days, paid_at, membership_id, payment_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [pending.user_id, pending.package_id, pending.amount, origAmount, discAmount, extraDaysVal, startDate, membershipId, paymentType]
+        );
+        if (pending.coupon_id) {
+            await pool.query(
+                'INSERT INTO coupon_redemptions (coupon_id, user_id, package_id) VALUES ($1, $2, $3)',
+                [pending.coupon_id, pending.user_id, pending.package_id]
+            );
+            await pool.query(
+                'UPDATE coupons SET use_count = COALESCE(use_count, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+                [pending.coupon_id]
+            );
+        }
+        await pool.query(
+            `UPDATE pending_payments SET status = 'approved', verified_at = CURRENT_TIMESTAMP, verified_by_admin_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+            [adminId != null ? adminId : null, id]
+        );
+        addCmsNotification(pool, {
+            notification_type: 'payment_done',
+            title: 'ลูกค้าชำระเงิน',
+            message: `ยืนยันรายการ #${id} แพ็กเกจ ${pkg.name} (User ID: ${pending.user_id})`,
+            link_url: `/cms/users/${pending.user_id}`,
+            related_user_id: pending.user_id,
+            related_pending_payment_id: id
+        }).catch(() => {});
+        res.json({ success: true, message: 'ยืนยันเงินเข้าแล้ว สมาชิกถูกเปิดใช้งาน' });
+    } catch (err) {
+        console.error('CMS verifyPendingPayment error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * คูปองที่ลูกค้าเก็บไว้ใช้รอบชำระอัตโนมัติถัดไป (แสดงในประวัติการชำระเป็นสถานะ รอชำระ)
+ */
+async function getUserSavedCouponNextPayment(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query(
+            `SELECT ucnp.id, ucnp.coupon_id, ucnp.created_at, c.code, c.name, c.discount_percent, c.condition_type
+             FROM user_coupon_next_payment ucnp
+             JOIN coupons c ON c.id = ucnp.coupon_id
+             WHERE ucnp.user_id = $1`,
+            [userId]
+        );
+        const row = result.rows[0] || null;
+        res.json({ success: true, data: row });
+    } catch (err) {
+        console.error('CMS getUserSavedCouponNextPayment error:', err);
+        res.status(500).json({ success: false, message: 'โหลดข้อมูลคูปองรอชำระไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ประวัติการชำระเงินของลูกค้า (ซื้อแพ็กเกจ/ต่อแพ็กเกจ)
+ */
+async function getUserPaymentHistory(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const result = await pool.query(
+            `SELECT ph.id, ph.user_id, ph.package_id, ph.amount, ph.original_amount, ph.discount_amount, ph.extra_days, ph.paid_at, ph.payment_type, ph.created_at,
+              p.name AS package_name
+             FROM payment_history ph
+             LEFT JOIN packages p ON p.id = ph.package_id
+             WHERE ph.user_id = $1
+             ORDER BY ph.paid_at DESC NULLS LAST, ph.id DESC`,
+            [userId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error('CMS getUserPaymentHistory error:', err);
+        res.status(500).json({ success: false, message: 'โหลดประวัติการชำระเงินไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ระงับ/เปิดใช้ผู้ใช้ (ลูกค้า)
+ */
+async function setUserActive(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        const { is_active } = req.body !== undefined ? req.body : { is_active: true };
+        if (isNaN(userId)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const userResult = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
+        }
+        await pool.query('UPDATE users SET is_active = $1 WHERE id = $2', [!!is_active, userId]);
+        res.json({
+            success: true,
+            message: is_active ? 'เปิดการใช้งานแล้ว' : 'ระงับการใช้งานแล้ว',
+            data: { is_active: !!is_active }
+        });
+    } catch (err) {
+        console.error('CMS set user active error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แก้ไขข้อมูลสมาชิกของลูกค้า (วันหมดอายุ, แพ็กเกจ)
+ * จำนวนวันคงเหลือคำนวณจาก วันปัจจุบัน ถึง วันหมดอายุ (ไม่ต้องเก็บใน DB)
+ */
+async function updateUserMembership(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        const { end_date, package_id } = req.body || {};
+        if (isNaN(userId)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const userResult = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
+        }
+        const memResult = await pool.query(
+            `SELECT id FROM memberships WHERE user_id = $1 AND status = 'active' ORDER BY end_date DESC LIMIT 1`,
+            [userId]
+        );
+        if (memResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลสมาชิกที่แก้ไขได้' });
+        }
+        const membershipId = memResult.rows[0].id;
+
+        const updates = [];
+        const values = [];
+        let idx = 1;
+
+        if (end_date !== undefined && end_date !== null && end_date !== '') {
+            const endDate = new Date(end_date);
+            if (!Number.isNaN(endDate.getTime())) {
+                updates.push(`end_date = $${idx}`);
+                values.push(endDate);
+                idx += 1;
+            }
+        }
+        if (package_id !== undefined && package_id !== null && package_id !== '') {
+            const pkgId = parseInt(package_id, 10);
+            if (!Number.isNaN(pkgId)) {
+                updates.push(`package_id = $${idx}`);
+                values.push(pkgId);
+                idx += 1;
+            }
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ success: false, message: 'กรุณาระบุวันหมดอายุหรือแพ็กเกจที่ต้องการแก้ไข' });
+        }
+
+        updates.push(`updated_at = CURRENT_TIMESTAMP`);
+        values.push(membershipId);
+
+        await pool.query(
+            `UPDATE memberships SET ${updates.join(', ')} WHERE id = $${idx}`,
+            values
+        );
+
+        res.json({
+            success: true,
+            message: 'บันทึกข้อมูลสมาชิกแล้ว',
+            data: { end_date: end_date || null, package_id: package_id || null }
+        });
+    } catch (err) {
+        console.error('CMS update user membership error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายการแอดมิน — จากตาราง admins
+ */
+async function getAdmins(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT id, username, email, COALESCE(is_active, true) AS is_active, created_at 
+             FROM admins ORDER BY id ASC`
+        );
+        const rows = Array.isArray(result.rows) ? result.rows : [];
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('CMS get admins error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * สร้างแอดมินใหม่ (username, email, password)
+ */
+async function createAdmin(req, res) {
+    try {
+        const { username, email, password } = req.body || {};
+        if (!username || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณากรอกชื่อผู้ใช้ อีเมล และรหัสผ่าน'
+            });
+        }
+        const un = username.trim();
+        const em = email.trim();
+        if (password.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'
+            });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(em)) {
+            return res.status(400).json({
+                success: false,
+                message: 'รูปแบบอีเมลไม่ถูกต้อง'
+            });
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await pool.query(
+            `INSERT INTO admins (username, email, password) VALUES ($1, $2, $3) 
+             RETURNING id, username, email, created_at`,
+            [un, em, hashedPassword]
+        );
+        res.status(201).json({
+            success: true,
+            message: 'สร้างแอดมินแล้ว',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).json({
+                success: false,
+                message: 'ชื่อผู้ใช้หรืออีเมลนี้มีอยู่แล้ว'
+            });
+        }
+        console.error('CMS create admin error:', err);
+        res.status(500).json({ success: false, message: 'สร้างไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ประวัติการเข้าใช้งาน CMS (จาก login_logs)
+ */
+async function getLoginHistory(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT id, admin_id, username, email, login_at, ip_address 
+             FROM login_logs ORDER BY login_at DESC LIMIT 500`
+        );
+        const rows = Array.isArray(result.rows) ? result.rows : [];
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('CMS get login history error:', err);
+        res.status(500).json({ success: false, message: 'โหลดประวัติไม่สำเร็จ' });
+    }
+}
+
+/**
+ * ตั้งค่า Login (สาธารณะ — สำหรับหน้า /cms/login ดึง logo และพื้นหลัง)
+ */
+async function getLoginSettings(req, res) {
+    try {
+        const result = await pool.query(
+            'SELECT login_logo_url, login_bg_image_url, login_bg_color FROM cms_settings WHERE id = 1 LIMIT 1'
+        );
+        const row = result.rows[0] || {};
+        res.json({
+            success: true,
+            data: {
+                login_logo_url: row.login_logo_url || null,
+                login_bg_image_url: row.login_bg_image_url || null,
+                login_bg_color: (row.login_bg_color && row.login_bg_color.trim()) ? row.login_bg_color.trim() : '#5b21b6'
+            }
+        });
+    } catch (err) {
+        console.error('CMS get login settings error:', err);
+        res.json({
+            success: true,
+            data: { login_logo_url: null, login_bg_image_url: null, login_bg_color: '#5b21b6' }
+        });
+    }
+}
+
+/**
+ * ตั้งค่า CMS ทั้งหมด (สำหรับหน้า ตั้งค่า — ต้อง admin)
+ */
+async function getSettings(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT id, login_logo_url, login_bg_image_url, login_bg_color, updated_at,
+              qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url
+             FROM cms_settings WHERE id = 1 LIMIT 1`
+        );
+        const row = result.rows[0];
+        if (!row) {
+            return res.json({
+                success: true,
+                data: {
+                    login_logo_url: null, login_bg_image_url: null, login_bg_color: '#5b21b6', updated_at: null,
+                    qr_payment_bank_name: null, qr_payment_account_no: null, qr_payment_account_name: null, qr_payment_qr_image_url: null
+                }
+            });
+        }
+        res.json({
+            success: true,
+            data: {
+                login_logo_url: row.login_logo_url || null,
+                login_bg_image_url: row.login_bg_image_url || null,
+                login_bg_color: row.login_bg_color || '#5b21b6',
+                updated_at: row.updated_at,
+                qr_payment_bank_name: row.qr_payment_bank_name || null,
+                qr_payment_account_no: row.qr_payment_account_no || null,
+                qr_payment_account_name: row.qr_payment_account_name || null,
+                qr_payment_qr_image_url: row.qr_payment_qr_image_url || null,
+            }
+        });
+    } catch (err) {
+        console.error('CMS get settings error:', err);
+        res.status(500).json({ success: false, message: 'โหลดตั้งค่าไม่สำเร็จ' });
+    }
+}
+
+/**
+ * อัปเดตตั้งค่า CMS (โลโก้ URL, พื้นหลัง URL, สีพื้นหลัง)
+ */
+async function updateSettings(req, res) {
+    try {
+        const { login_logo_url, login_bg_image_url, login_bg_color, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url } = req.body || {};
+        const logo = login_logo_url != null ? String(login_logo_url).trim() || null : null;
+        const bgImage = login_bg_image_url != null ? String(login_bg_image_url).trim() || null : null;
+        const bgColor = (login_bg_color != null && String(login_bg_color).trim()) ? String(login_bg_color).trim() : '#5b21b6';
+        const qrBank = qr_payment_bank_name != null ? String(qr_payment_bank_name).trim().slice(0, 255) || null : null;
+        const qrAccNo = qr_payment_account_no != null ? String(qr_payment_account_no).trim().slice(0, 100) || null : null;
+        const qrAccName = qr_payment_account_name != null ? String(qr_payment_account_name).trim().slice(0, 255) || null : null;
+        const qrImage = qr_payment_qr_image_url != null ? String(qr_payment_qr_image_url).trim() || null : null;
+        await pool.query(
+            `INSERT INTO cms_settings (id, login_logo_url, login_bg_image_url, login_bg_color, updated_at, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url)
+             VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP, $4, $5, $6, $7)
+             ON CONFLICT (id) DO UPDATE SET
+               login_logo_url = EXCLUDED.login_logo_url,
+               login_bg_image_url = EXCLUDED.login_bg_image_url,
+               login_bg_color = EXCLUDED.login_bg_color,
+               updated_at = CURRENT_TIMESTAMP,
+               qr_payment_bank_name = COALESCE(EXCLUDED.qr_payment_bank_name, cms_settings.qr_payment_bank_name),
+               qr_payment_account_no = COALESCE(EXCLUDED.qr_payment_account_no, cms_settings.qr_payment_account_no),
+               qr_payment_account_name = COALESCE(EXCLUDED.qr_payment_account_name, cms_settings.qr_payment_account_name),
+               qr_payment_qr_image_url = COALESCE(EXCLUDED.qr_payment_qr_image_url, cms_settings.qr_payment_qr_image_url)`,
+            [logo, bgImage, bgColor, qrBank, qrAccNo, qrAccName, qrImage]
+        );
+        res.json({ success: true, message: 'บันทึกตั้งค่าแล้ว' });
+    } catch (err) {
+        console.error('CMS update settings error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+/**
+ * อัปโหลดรูปตั้งค่า CMS (โลโก้ หรือ พื้นหลังหน้า Login) — บันทึกใน uploads/cms/settings แปลงเป็น WebP
+ */
+async function uploadSettingsImage(req, res) {
+    try {
+        if (!req.file || !req.file.filename) {
+            return res.status(400).json({ success: false, message: 'กรุณาเลือกไฟล์รูป' });
+        }
+        const fullPath = path.join(process.cwd(), 'uploads/cms/settings', req.file.filename);
+        const outFilename = await convertToWebp(fullPath);
+        const url = '/uploads/cms/settings/' + outFilename;
+        res.json({ success: true, url });
+    } catch (err) {
+        console.error('CMS upload settings image error:', err);
+        res.status(500).json({ success: false, message: err.message || 'อัปโหลดไม่สำเร็จ' });
+    }
+}
+
+/**
+ * อัปโหลดรูป QR การชำระเงิน — บันทึกใน uploads/cms/qr แปลงเป็น WebP
+ */
+async function uploadQrImage(req, res) {
+    try {
+        if (!req.file || !req.file.filename) {
+            return res.status(400).json({ success: false, message: 'กรุณาเลือกไฟล์รูป' });
+        }
+        const fullPath = path.join(process.cwd(), 'uploads/cms/qr', req.file.filename);
+        const outFilename = await convertToWebp(fullPath);
+        const url = '/uploads/cms/qr/' + outFilename;
+        res.json({ success: true, url });
+    } catch (err) {
+        console.error('CMS upload QR image error:', err);
+        res.status(500).json({ success: false, message: err.message || 'อัปโหลดไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แพ็กเกจ — รายการทั้งหมด (CMS)
+ */
+async function getPackages(req, res) {
+    try {
+        const result = await pool.query(
+            'SELECT id, name, duration_days, description, price, COALESCE(is_active, true) AS is_active, sort_order, period_type, coupon_id, COALESCE(requires_payment, true) AS requires_payment, max_uses_per_user, created_at, updated_at FROM packages ORDER BY sort_order ASC, id ASC'
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error('CMS get packages error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แพ็กเกจเดียว (สำหรับแก้ไข)
+ */
+async function getPackageById(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query('SELECT * FROM packages WHERE id = $1', [id]);
+        if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
+        res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+        console.error('CMS get package error:', err);
+        res.status(500).json({ success: false, message: 'โหลดไม่สำเร็จ' });
+    }
+}
+
+/**
+ * สร้างแพ็กเกจใหม่
+ */
+async function createPackage(req, res) {
+    try {
+        const { name, duration_days, description, price, period_type, coupon_id, requires_payment, max_uses_per_user } = req.body || {};
+        if (!name || duration_days == null) {
+            return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อและจำนวนวันใช้งาน' });
+        }
+        const days = parseInt(String(duration_days), 10);
+        if (isNaN(days) || days < 0) {
+            return res.status(400).json({ success: false, message: 'จำนวนวันต้องเป็นตัวเลขที่ไม่ติดลบ' });
+        }
+        const priceVal = parseFloat(price) != null && !isNaN(parseFloat(price)) ? parseFloat(price) : 0;
+        let periodVal = (period_type || '').trim().toLowerCase() || null;
+        if (periodVal !== 'annual' && periodVal !== '3months') periodVal = null;
+        const couponIdVal = coupon_id != null && coupon_id !== '' ? parseInt(coupon_id, 10) : null;
+        if (couponIdVal != null && !isNaN(couponIdVal)) {
+            const couponRow = await pool.query('SELECT id, condition_type FROM coupons WHERE id = $1 AND coupon_type = $2', [couponIdVal, 'discount']);
+            if (couponRow.rows.length > 0 && (couponRow.rows[0].condition_type === 'annual' || couponRow.rows[0].condition_type === '3months')) {
+                periodVal = couponRow.rows[0].condition_type;
+            }
+        }
+        const requiresPaymentVal = requires_payment !== false && requires_payment !== 'false';
+        const maxUsesVal = max_uses_per_user != null && String(max_uses_per_user).trim() !== '' ? parseInt(max_uses_per_user, 10) : null;
+        const result = await pool.query(
+            'INSERT INTO packages (name, duration_days, description, price, is_active, sort_order, period_type, coupon_id, requires_payment, max_uses_per_user) VALUES ($1, $2, $3, $4, true, (SELECT COALESCE(MAX(sort_order),0)+1 FROM packages), $5, $6, $7, $8) RETURNING *',
+            [String(name).trim(), days, description ? String(description).trim() : null, priceVal, periodVal, couponIdVal && !isNaN(couponIdVal) ? couponIdVal : null, requiresPaymentVal, maxUsesVal]
+        );
+        res.status(201).json({ success: true, message: 'เพิ่มแพ็กเกจแล้ว', data: result.rows[0] });
+    } catch (err) {
+        console.error('CMS create package error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แก้ไขแพ็กเกจ
+ */
+async function updatePackage(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const { name, duration_days, description, price, is_active, period_type, coupon_id, requires_payment, max_uses_per_user } = req.body || {};
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        if (!name || duration_days == null) {
+            return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อและจำนวนวันใช้งาน' });
+        }
+        const days = parseInt(String(duration_days), 10);
+        if (isNaN(days) || days < 0) {
+            return res.status(400).json({ success: false, message: 'จำนวนวันต้องเป็นตัวเลขที่ไม่ติดลบ' });
+        }
+        const priceVal = parseFloat(price) != null && !isNaN(parseFloat(price)) ? parseFloat(price) : 0;
+        let periodVal = (period_type || '').trim().toLowerCase() || null;
+        if (periodVal !== 'annual' && periodVal !== '3months') periodVal = null;
+        const couponIdVal = coupon_id != null && coupon_id !== '' ? parseInt(coupon_id, 10) : null;
+        if (couponIdVal != null && !isNaN(couponIdVal)) {
+            const couponRow = await pool.query('SELECT id, condition_type FROM coupons WHERE id = $1 AND coupon_type = $2', [couponIdVal, 'discount']);
+            if (couponRow.rows.length > 0 && (couponRow.rows[0].condition_type === 'annual' || couponRow.rows[0].condition_type === '3months')) {
+                periodVal = couponRow.rows[0].condition_type;
+            }
+        }
+        const finalCouponId = couponIdVal != null && !isNaN(couponIdVal) ? couponIdVal : null;
+        const requiresPaymentVal = requires_payment !== false && requires_payment !== 'false';
+        const maxUsesVal = max_uses_per_user != null && String(max_uses_per_user).trim() !== '' ? parseInt(max_uses_per_user, 10) : null;
+        await pool.query(
+            'UPDATE packages SET name = $1, duration_days = $2, description = $3, price = $4, updated_at = CURRENT_TIMESTAMP, is_active = COALESCE($5, is_active), period_type = $6, coupon_id = $7, requires_payment = $8, max_uses_per_user = $9 WHERE id = $10',
+            [String(name).trim(), days, description != null ? String(description).trim() : null, priceVal, is_active, periodVal, finalCouponId, requiresPaymentVal, maxUsesVal, id]
+        );
+        res.json({ success: true, message: 'แก้ไขแล้ว' });
+    } catch (err) {
+        console.error('CMS update package error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+// -----------------------------------------------------------------------------
+// คูปอง (Coupons)
+// -----------------------------------------------------------------------------
+async function getCoupons(req, res) {
+    try {
+        const result = await pool.query(
+            `SELECT id, code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, use_count, is_active, created_at, updated_at
+             FROM coupons ORDER BY created_at DESC`
+        );
+        res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error('CMS get coupons error:', err);
+        res.status(500).json({ success: false, message: 'โหลดรายการคูปองไม่สำเร็จ' });
+    }
+}
+
+async function getCouponById(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query(
+            'SELECT * FROM coupons WHERE id = $1',
+            [id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบคูปอง' });
+        }
+        res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+        console.error('CMS get coupon error:', err);
+        res.status(500).json({ success: false, message: 'โหลดคูปองไม่สำเร็จ' });
+    }
+}
+
+async function createCoupon(req, res) {
+    try {
+        const { code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, is_active } = req.body || {};
+        const rawCode = (code || '').trim();
+        if (!rawCode) {
+            return res.status(400).json({ success: false, message: 'กรุณากรอกรหัสคูปอง' });
+        }
+        const type = (coupon_type || 'extend_days').trim().toLowerCase();
+        const val = parseInt(value, 10);
+        if (type === 'extend_days' && (isNaN(val) || val < 1)) {
+            return res.status(400).json({ success: false, message: 'กรุณาระบุจำนวนวัน (value) เป็นตัวเลขมากกว่า 0' });
+        }
+        if (type === 'discount') {
+            const cond = (condition_type || '').trim().toLowerCase();
+            if (cond !== 'annual' && cond !== '3months') {
+                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งาน (ซื้อแบบรายปี หรือ 3 เดือน)' });
+            }
+            const pct = parseInt(discount_percent, 10);
+            if (isNaN(pct) || pct < 1 || pct > 100) {
+                return res.status(400).json({ success: false, message: 'กรุณาระบุเปอร์เซ็นต์ส่วนลด 1-100' });
+            }
+        }
+        const maxUses = max_uses != null && max_uses !== '' ? parseInt(max_uses, 10) : null;
+        const validFrom = valid_from ? new Date(valid_from) : null;
+        const validUntil = valid_until ? new Date(valid_until) : null;
+        const active = is_active !== false;
+        const condType = (condition_type || '').trim().toLowerCase() || null;
+        const discountPct = type === 'discount' ? Math.min(100, Math.max(0, parseInt(discount_percent, 10) || 0)) : null;
+
+        const result = await pool.query(
+            `INSERT INTO coupons (code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING id, code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, use_count, is_active, created_at`,
+            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType === 'annual' || condType === '3months' ? condType : null, discountPct, validFrom, validUntil, maxUses, active]
+        );
+        res.status(201).json({ success: true, message: 'สร้างคูปองแล้ว', data: result.rows[0] });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).json({ success: false, message: 'รหัสคูปองนี้มีอยู่แล้ว' });
+        }
+        console.error('CMS create coupon error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+async function updateCoupon(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const { code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, is_active } = req.body || {};
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const rawCode = (code || '').trim();
+        if (!rawCode) {
+            return res.status(400).json({ success: false, message: 'กรุณากรอกรหัสคูปอง' });
+        }
+        const type = (coupon_type || 'extend_days').trim().toLowerCase();
+        const val = parseInt(value, 10);
+        if (type === 'extend_days' && (isNaN(val) || val < 1)) {
+            return res.status(400).json({ success: false, message: 'กรุณาระบุจำนวนวัน (value) เป็นตัวเลขมากกว่า 0' });
+        }
+        if (type === 'discount') {
+            const cond = (condition_type || '').trim().toLowerCase();
+            if (cond !== 'annual' && cond !== '3months') {
+                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งาน (ซื้อแบบรายปี หรือ 3 เดือน)' });
+            }
+            const pct = parseInt(discount_percent, 10);
+            if (isNaN(pct) || pct < 1 || pct > 100) {
+                return res.status(400).json({ success: false, message: 'กรุณาระบุเปอร์เซ็นต์ส่วนลด 1-100' });
+            }
+        }
+        const maxUses = max_uses != null && max_uses !== '' ? parseInt(max_uses, 10) : null;
+        const validFrom = valid_from ? new Date(valid_from) : null;
+        const validUntil = valid_until ? new Date(valid_until) : null;
+        const condType = (condition_type || '').trim().toLowerCase() || null;
+        const discountPct = type === 'discount' ? Math.min(100, Math.max(0, parseInt(discount_percent, 10) || 0)) : null;
+
+        await pool.query(
+            `UPDATE coupons SET code = $1, name = $2, description = $3, coupon_type = $4, value = $5, condition_type = $6, discount_percent = $7, valid_from = $8, valid_until = $9, max_uses = $10, is_active = $11, updated_at = CURRENT_TIMESTAMP WHERE id = $12`,
+            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType === 'annual' || condType === '3months' ? condType : null, discountPct, validFrom, validUntil, maxUses, is_active !== false, id]
+        );
+        res.json({ success: true, message: 'แก้ไขคูปองแล้ว' });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).json({ success: false, message: 'รหัสคูปองนี้มีอยู่แล้ว' });
+        }
+        console.error('CMS update coupon error:', err);
+        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+    }
+}
+
+async function deleteCoupon(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        await pool.query('DELETE FROM coupons WHERE id = $1', [id]);
+        res.json({ success: true, message: 'ลบคูปองแล้ว' });
+    } catch (err) {
+        console.error('CMS delete coupon error:', err);
+        res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' });
+    }
+}
+
+module.exports = {
+    cmsLogin,
+    getDashboard,
+    getTemplates,
+    getTemplateById,
+    createTemplate,
+    updateTemplate,
+    toggleTemplate,
+    getUsers,
+    getUserById,
+    getUserPaymentChannels,
+    getUserPendingPayments,
+    getUserSavedCouponNextPayment,
+    getUserPaymentHistory,
+    verifyPendingPayment,
+    setUserActive,
+    updateUserMembership,
+    getAdmins,
+    createAdmin,
+    getLoginHistory,
+    getNotifications,
+    getLoginSettings,
+    getSettings,
+    updateSettings,
+    uploadSettingsImage,
+    uploadQrImage,
+    getPackages,
+    getPackageById,
+    createPackage,
+    updatePackage,
+    getCoupons,
+    getCouponById,
+    createCoupon,
+    updateCoupon,
+    deleteCoupon
+};
