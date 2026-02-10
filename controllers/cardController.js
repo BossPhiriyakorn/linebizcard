@@ -279,7 +279,7 @@ async function getMyCards(req, res) {
 
         const result = await pool.query(
             `SELECT 
-                id, unique_id, template_id, user_name, user_phone, user_email, user_description,
+                id, unique_id, json_file_name, template_id, user_name, user_phone, user_email, user_description,
                 user_image, liff_url, created_at, updated_at, expires_at, card_type,
                 (SELECT name FROM templates WHERE id = user_cards.template_id) as template_name
             FROM user_cards 

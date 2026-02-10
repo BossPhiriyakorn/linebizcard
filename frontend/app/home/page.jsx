@@ -79,6 +79,7 @@ function HomeContent() {
       localStorage.setItem('share_card_name', card.unique_id);
       localStorage.setItem('share_card_id', '1');
     }
+    // ต้องไปที่ LIFF URL เพื่อให้หน้าแชร์โหลดใน LINE และ shareTargetPicker ทำงานได้
     window.location.href = url;
   };
 

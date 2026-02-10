@@ -13,8 +13,10 @@ async function fetchLiffId() {
 }
 
 async function fetchJson(name) {
-  const res = await fetch(`/json/${name}.json`);
-  if (!res.ok) throw new Error('ไม่พบไฟล์ JSON');
+  const baseName = (name || '').replace(/\.json$/i, '');
+  if (!baseName) throw new Error('ไม่พบชื่อการ์ดสำหรับโหลด');
+  const res = await fetch(`/json/${baseName}.json`);
+  if (!res.ok) throw new Error('ไม่พบไฟล์การ์ด (ไม่พบไฟล์ JSON)');
   return res.json();
 }
 
@@ -141,7 +143,7 @@ export default function Share() {
           const pageUrl = typeof window !== 'undefined' ? window.location.origin + (window.location.pathname || '/') : '';
           msg = 'shareTargetPicker ยังไม่เปิดสำหรับ LIFF app นี้ — ใน LINE Developers ตั้ง Endpoint URL ของ LIFF ให้ตรงกับ URL หน้านี้: ' + pageUrl;
         }
-        if (name) {
+        if (cardName) {
           showError(msg);
         } else {
           window.location.href = getLoginUrl();

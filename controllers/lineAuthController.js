@@ -172,11 +172,11 @@ async function lineCallback(req, res) {
                                   referer !== baseUrl + '/' && // ไม่ใช่ BASE_URL ที่ไม่มี path
                                   referer !== baseUrl); // ไม่ใช่ BASE_URL ที่ไม่มี trailing slash
         
-        // ถ้าเป็น LIFF share flow → redirect กลับไปที่ BASE_URL
-        // share.html จะจัดการ query parameters จาก localStorage
+        // ถ้าเป็น LIFF share flow → redirect กลับไปที่หน้า /share พร้อม token
+        // หน้า share จะอ่านการ์ดจาก localStorage (share_card_name, share_card_id) ที่ตั้งก่อนไป LIFF
         if (isLiffShareFlow && !isShareFlowFromState && !isShareFlowFromReferer) {
-            console.log('LIFF share flow detected - redirecting to BASE_URL');
-            const shareUrl = `${baseUrl}/?token=${token}`;
+            console.log('LIFF share flow detected - redirecting to /share');
+            const shareUrl = `${baseUrl}/share?token=${token}`;
             res.redirect(shareUrl);
             return;
         }
