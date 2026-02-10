@@ -152,7 +152,10 @@ async function redeemCoupon(req, res) {
         }
         const coupon = couponResult.rows[0];
         if (coupon.coupon_type === 'discount') {
-            const condLabel = coupon.condition_type === 'annual' ? 'ซื้อแบบรายปี' : coupon.condition_type === '3months' ? 'ซื้อแบบ 3 เดือน' : 'แพ็กเกจที่ตรงเงื่อนไข';
+            const condParts = (coupon.condition_type || '').split(',').map((c) => c.trim());
+            const condLabel = condParts.length
+                ? condParts.map((c) => (c === 'annual' ? 'ซื้อแบบรายปี' : c === '3months' ? 'ซื้อแบบ 3 เดือน' : c)).join(' หรือ ')
+                : 'แพ็กเกจที่ตรงเงื่อนไข';
             return res.status(400).json({
                 success: false,
                 message: `คูปองส่วนลดนี้ใช้ได้เมื่อเลือกแพ็กเกจ${condLabel} ที่หน้าอัพเกรด กรุณาไปที่เมนู อัพเกรด แล้วกรอกรหัสคูปองเมื่อเลือกแพ็กเกจที่ตรงเงื่อนไข`

@@ -80,6 +80,41 @@ ssh -i "your-key-name.pem" ubuntu@3.xxx.xxx.xxx
 
 เมื่อเข้าได้จะเห็นพรอมต์แบบ `ubuntu@ip-xxx-xxx-xxx-xxx:~$`
 
+### แก้ปัญหา: SSH Connection timed out
+
+ถ้ารัน `ssh -i "..." ubuntu@ec2-xxx...` แล้วขึ้น **Connection timed out** หรือ **Connection to ... port 22 timed out** แปลว่าคอมคุณเชื่อมถึง EC2 ไม่ได้ ทำตามนี้:
+
+1. **เปิดพอร์ต 22 (SSH) ใน Security Group**
+   - เข้า **AWS Console** → **EC2** → **Instances** → คลิก instance ที่ใช้ (เช่น `linebizcard-server`)
+   - ไปที่แท็บ **Security** → คลิก **Security group** (ลิงก์ชื่อกลุ่ม เช่น `sg-0abc123...`)
+   - กด **Edit inbound rules** → **Add rule**
+   - ตั้งค่า:
+     - **Type:** SSH
+     - **Port:** 22
+     - **Source:** เลือก **My IP** (จะใส่ IP ปัจจุบันของคุณให้อัตโนมัติ) หรือถ้าต้องการให้ทุก IP เข้าได้ (ไม่แนะนำสำหรับ production): **Anywhere-IPv4** `0.0.0.0/0`
+   - กด **Save rules**
+
+2. **ตรวจสอบว่า instance รันอยู่**
+   - ใน EC2 → Instances ดู **Instance state** ต้องเป็น **Running**
+   - ดู **Public IPv4 address** ว่าตรงกับที่ใช้ในคำสั่ง `ssh` หรือไม่ (ถ้า restart instance แล้ว IP อาจเปลี่ยน)
+
+3. **ลอง SSH อีกครั้ง**
+   ```powershell
+   ssh -i "C:\Users\mahaw\.ssh\tectony-dev.pem" ubuntu@ec2-18-140-113-30.ap-southeast-1.compute.amazonaws.com
+   ```
+   ถ้า IP เปลี่ยน ให้ใช้ **Public IPv4** หรือ **Public IPv4 DNS** ใหม่จาก EC2 Console
+
+**หมายเหตุ:** ถ้าใช้ **My IP** แล้วต่อมาอินเทอร์เน็ตเปลี่ยน IP (เช่น เปลี่ยน WiFi) ต้องเข้าไปเพิ่ม IP ใหม่ใน Security Group อีกครั้ง หรือใช้ **Elastic IP** สำหรับ instance และเปิด SSH จาก IP ที่ใช้จริงเท่านั้น
+
+**ทางเลือก: ใช้ AWS CLI (ถ้าติดตั้งและ configure แล้ว)**  
+จาก EC2 → Security Groups คัดลอก **Security group ID** (เช่น `sg-0123abcd`) แล้วรันใน PowerShell (แทน `sg-XXXXXXXX` ด้วย ID จริง):
+
+```powershell
+# ดึง IP ปัจจุบันของคุณแล้วเพิ่มเข้า Security Group (พอร์ต 22)
+$myip = (Invoke-WebRequest -Uri "https://checkip.amazonaws.com" -UseBasicParsing).Content.Trim()
+aws ec2 authorize-security-group-ingress --group-id sg-XXXXXXXX --protocol tcp --port 22 --cidr "$myip/32"
+```
+
 ---
 
 # ขั้นตอนที่ 3: ติดตั้งโปรแกรมบนเซิร์ฟเวอร์ (Node, PostgreSQL, Nginx, PM2)
@@ -135,6 +170,37 @@ sudo systemctl enable nginx
 ```bash
 sudo npm install -g pm2
 ```
+
+## 3.7 สร้าง Swap File (ทางรอดสำหรับ Server แรมน้อย) — แนะนำ
+
+ถ้า instance แรมน้อย (เช่น t3.micro / t3.small) ตอนรัน `npm run build:clean` อาจค้างหรือเจอ memory error การสร้าง Swap จะจำลองพื้นที่ดิสก์มาใช้เป็นแรมเสริม ทำให้ build ผ่านได้ (อาจช้าลงนิดหน่อย)
+
+รันใน Terminal ของ Server **ทีละบรรทัด** (สร้าง Swap 4GB):
+
+```bash
+# 1. สร้างไฟล์ขนาด 4GB
+sudo fallocate -l 4G /swapfile
+
+# 2. ปรับสิทธิ์ไฟล์ให้ปลอดภัย
+sudo chmod 600 /swapfile
+
+# 3. แปลงไฟล์เป็นพื้นที่ Swap
+sudo mkswap /swapfile
+
+# 4. เปิดใช้งาน
+sudo swapon /swapfile
+
+# 5. เช็คว่ามาหรือยัง (ต้องเห็นบรรทัด Swap)
+sudo swapon --show
+```
+
+**ให้ Swap อยู่ต่อหลังรีบูต (ทำครั้งเดียว):**
+
+```bash
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+ทำเสร็จแล้วไปขั้นตอนที่ 4 (โคลนโปรเจค) ได้เลย เมื่อถึงขั้น Build (4.5) จะมี Swap ช่วยแล้ว
 
 ---
 

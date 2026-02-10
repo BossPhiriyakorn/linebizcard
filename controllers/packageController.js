@@ -129,18 +129,15 @@ async function choosePackage(req, res) {
                     couponRejectReason = 'รหัสคูปองไม่สามารถใช้ได้ในขณะนี้';
                 } else {
                     const pkgPeriod = (pkg.period_type || '').toLowerCase();
-                    const couponCondition = (coupon.condition_type || '').toLowerCase();
+                    const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                     const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
-                    if (!pkgPeriod || !couponCondition) {
+                    if (!pkgPeriod || allowedConditions.length === 0) {
                         couponRejectReason = 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
                     } else if (!appliesToPackage) {
                         couponRejectReason = 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก';
-                    } else if (pkgPeriod !== couponCondition) {
-                        couponRejectReason = couponCondition === 'annual'
-                            ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจรายปี กรุณาเลือกแพ็กเกจรายปีหรือลบรหัสคูปอง'
-                            : couponCondition === '3months'
-                                ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ 3 เดือน กรุณาเลือกแพ็กเกจ 3 เดือนหรือลบรหัสคูปอง'
-                                : 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
+                    } else if (!allowedConditions.includes(pkgPeriod)) {
+                        const labels = allowedConditions.map((c) => (c === 'annual' ? 'รายปี' : c === '3months' ? '3 เดือน' : c));
+                        couponRejectReason = 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ: ' + labels.join(', ') + ' กรุณาเลือกแพ็กเกจที่ตรงหรือลบรหัสคูปอง';
                     } else {
                         const already = await pool.query(
                             'SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2',
@@ -336,13 +333,14 @@ async function validateCoupon(req, res) {
             return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'รหัสคูปองไม่สามารถใช้ได้ในขณะนี้' } });
         }
         const pkgPeriod = (pkg.period_type || '').toLowerCase();
-        const couponCondition = (coupon.condition_type || '').toLowerCase();
+        const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
         const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
         if (!appliesToPackage) {
             return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก' } });
         }
-        if (!pkgPeriod || !couponCondition || pkgPeriod !== couponCondition) {
-            const msg = couponCondition === 'annual' ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจรายปี' : couponCondition === '3months' ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ 3 เดือน' : 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
+        if (!pkgPeriod || allowedConditions.length === 0 || !allowedConditions.includes(pkgPeriod)) {
+            const labels = allowedConditions.map((c) => (c === 'annual' ? 'รายปี' : c === '3months' ? '3 เดือน' : c));
+            const msg = labels.length ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ: ' + labels.join(', ') : 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
             return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: msg } });
         }
         const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
@@ -362,9 +360,13 @@ async function validateCoupon(req, res) {
     }
 }
 
+/** ไม่บังคับขั้นต่ำการชำระ — รับยอดหลังส่วนลดได้ทุกจำนวน (รวม 0 บาท) */
+const MIN_PAYMENT_AMOUNT_BAHT = 0;
+
 /**
  * สร้างรายการรอชำระ (QR) หลังหน้าสรุปการชำระ กดถัดไป → ไปหน้า pay-by-qr
  * POST body: { package_id, coupon_code? }
+ * ไม่ตรวจขั้นต่ำการชำระ — เมื่อมีส่วนลดให้ยอดเป็น 0 หรือน้อยก็สร้างรายการได้
  */
 async function createPendingPayment(req, res) {
     try {
@@ -394,13 +396,13 @@ async function createPendingPayment(req, res) {
                 const coupon = couponResult.rows[0];
                 const now = new Date();
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
-                const couponCondition = (coupon.condition_type || '').toLowerCase();
+                const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
                 if (coupon.coupon_type === 'discount' && coupon.is_active &&
                     (!coupon.valid_from || new Date(coupon.valid_from) <= now) &&
                     (!coupon.valid_until || new Date(coupon.valid_until) >= now) &&
                     (coupon.max_uses == null || (coupon.use_count || 0) < coupon.max_uses) &&
-                    appliesToPackage && pkgPeriod && couponCondition && pkgPeriod === couponCondition) {
+                    appliesToPackage && pkgPeriod && allowedConditions.length > 0 && allowedConditions.includes(pkgPeriod)) {
                     const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
                     if (already.rows.length === 0) {
                         const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));
@@ -411,7 +413,7 @@ async function createPendingPayment(req, res) {
                 }
             }
         }
-        const amount = Math.max(0, originalAmount - discountAmount);
+        const amount = Math.max(MIN_PAYMENT_AMOUNT_BAHT, originalAmount - discountAmount);
         const qrChannel = await pool.query(
             "SELECT id FROM payment_channels WHERE user_id = $1 AND channel_type = 'qr_self' ORDER BY id ASC LIMIT 1",
             [userId]

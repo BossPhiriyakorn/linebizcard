@@ -60,7 +60,7 @@ async function reserve(req, res) {
                 const coupon = couponResult.rows[0];
                 const now = new Date();
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
-                const couponCondition = (coupon.condition_type || '').toLowerCase();
+                const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
                 if (
                     coupon.coupon_type === 'discount' &&
@@ -70,8 +70,8 @@ async function reserve(req, res) {
                     (coupon.max_uses == null || (coupon.use_count || 0) < coupon.max_uses) &&
                     appliesToPackage &&
                     pkgPeriod &&
-                    couponCondition &&
-                    pkgPeriod === couponCondition
+                    allowedConditions.length > 0 &&
+                    allowedConditions.includes(pkgPeriod)
                 ) {
                     const already = await pool.query(
                         'SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2',
@@ -104,9 +104,14 @@ async function reserve(req, res) {
             cancelUrl,
         });
         if (!reserveResult.success || !reserveResult.redirectUrl) {
+            let msg = reserveResult.message || 'LINE Pay ยังรอเชื่อมต่อ API';
+            // เมื่อ LINE Pay คืนข้อความเรื่องขั้นต่ำ ให้แนะนำให้ใช้ปุ่มถัดไป (QR) แทน — ระบบเราไม่บังคับขั้นต่ำ
+            if (/ไม่ต่ำกว่า|ขั้นต่ำ|minimum|ต่ำกว่า\s*เกณฑ์/i.test(msg)) {
+                msg = 'ยอดหลังส่วนลดต่ำกว่าเกณฑ์ของ LINE Pay กรุณากดปุ่ม "ถัดไป — ไปหน้าคิวอาร์และแนบสลิป" เพื่อชำระได้';
+            }
             return res.status(200).json({
                 success: false,
-                message: reserveResult.message || 'LINE Pay ยังรอเชื่อมต่อ API',
+                message: msg,
                 code: reserveResult.code || 'NOT_IMPLEMENTED',
             });
         }

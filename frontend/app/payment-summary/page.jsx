@@ -120,7 +120,11 @@ function PaymentSummaryContent() {
           router.push(data.data.redirect);
           return;
         }
-        setAlert({ show: true, msg: data.message || 'สร้างรายการชำระไม่สำเร็จ', type: 'error' });
+        const msg = data.message || 'สร้างรายการชำระไม่สำเร็จ';
+        const noMinMsg = /ไม่ต่ำกว่า|ขั้นต่ำ|minimum|10\.00\s*บาท/i.test(msg)
+          ? 'ไม่มีขั้นต่ำการชำระในระบบ กรุณากดปุ่ม "ถัดไป" อีกครั้งเพื่อไปหน้าคิวอาร์และแนบสลิป'
+          : msg;
+        setAlert({ show: true, msg: noMinMsg, type: 'error' });
       })
       .catch(() => {
         setSubmitting(false);
@@ -178,7 +182,11 @@ function PaymentSummaryContent() {
           window.location.href = data.data.redirectUrl;
           return;
         }
-        setAlert({ show: true, msg: data.message || 'LINE Pay ยังไม่เปิดใช้', type: 'error' });
+        const msg = data.message || 'LINE Pay ยังไม่เปิดใช้';
+        const noMinMsg = /ไม่ต่ำกว่า|ขั้นต่ำ|minimum|ต่ำกว่า\s*เกณฑ์/i.test(msg)
+          ? 'ยอดหลังส่วนลดต่ำกว่าเกณฑ์ของ LINE Pay กรุณากดปุ่ม "ถัดไป — ไปหน้าคิวอาร์และแนบสลิป" เพื่อชำระได้'
+          : msg;
+        setAlert({ show: true, msg: noMinMsg, type: 'error' });
       })
       .catch(() => {
         setSubmitting(false);

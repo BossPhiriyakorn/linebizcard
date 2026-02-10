@@ -9,17 +9,25 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 
 const rootDir = path.join(__dirname, '..');
-const nextDir = path.join(rootDir, 'frontend', '.next');
+const frontendDir = path.join(rootDir, 'frontend');
 
-if (fs.existsSync(nextDir)) {
-  console.log('🧹 Removing frontend/.next (clean build)...');
-  fs.rmSync(nextDir, { recursive: true, force: true });
-  console.log('   Done.');
-} else {
-  console.log('📁 frontend/.next not found, skipping clean.');
-}
+// ลบครบเหมือน bamboo-DB — ลดโอกาส build ค้างจาก cache เสีย
+const dirsToClean = [
+  path.join(frontendDir, '.next'),
+  path.join(frontendDir, 'node_modules', '.cache'),
+  path.join(frontendDir, '.turbo'),
+];
 
-console.log('📦 Running npm run build...');
+dirsToClean.forEach((dir) => {
+  if (fs.existsSync(dir)) {
+    const rel = path.relative(rootDir, dir);
+    console.log('🧹 Removing', rel, '...');
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log('   Done.');
+  }
+});
+
+console.log('\n📦 Running npm run build...');
 const env = { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=2048' };
 const result = spawnSync('npm', ['run', 'build'], {
   cwd: rootDir,

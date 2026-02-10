@@ -35,13 +35,18 @@ export default function CouponsContent() {
     description: '',
     coupon_type: 'extend_days',
     value: '',
-    condition_type: '',
+    condition_types: [], // รายการเงื่อนไข (หลายรายการได้) เช่น ['annual', '3months']
     discount_percent: '',
     valid_from: '',
     valid_until: '',
     max_uses: '',
     is_active: true,
   });
+
+  const CONDITION_OPTIONS = [
+    { value: 'annual', label: 'ซื้อแบบรายปี' },
+    { value: '3months', label: 'ซื้อแบบ 3 เดือน' },
+  ];
 
   const load = () => {
     setLoading(true);
@@ -72,7 +77,7 @@ export default function CouponsContent() {
       description: '',
       coupon_type: 'extend_days',
       value: '7',
-      condition_type: '',
+      condition_types: [],
       discount_percent: '10',
       valid_from: '',
       valid_until: '',
@@ -80,6 +85,28 @@ export default function CouponsContent() {
       is_active: true,
     });
     setModalOpen(true);
+  };
+
+  const addCondition = () => {
+    setForm((f) => ({
+      ...f,
+      condition_types: [...(f.condition_types || []), CONDITION_OPTIONS[0].value],
+    }));
+  };
+
+  const removeCondition = (index) => {
+    setForm((f) => ({
+      ...f,
+      condition_types: (f.condition_types || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const setConditionAt = (index, value) => {
+    setForm((f) => {
+      const next = [...(f.condition_types || [])];
+      next[index] = value;
+      return { ...f, condition_types: next };
+    });
   };
 
   const openEdit = (id) => {
@@ -98,13 +125,15 @@ export default function CouponsContent() {
             const d = new Date(v);
             return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
           };
+          const condStr = c.condition_type || '';
+          const condition_types = condStr.split(',').map((s) => s.trim()).filter((s) => s === 'annual' || s === '3months');
           setForm({
             code: toStr(c.code),
             name: toStr(c.name),
             description: toStr(c.description),
             coupon_type: c.coupon_type || 'extend_days',
             value: c.value != null ? String(c.value) : '7',
-            condition_type: c.condition_type === 'annual' || c.condition_type === '3months' ? c.condition_type : '',
+            condition_types: condition_types.length ? condition_types : [],
             discount_percent: c.discount_percent != null ? String(c.discount_percent) : '10',
             valid_from: toDateStr(c.valid_from),
             valid_until: toDateStr(c.valid_until),
@@ -131,9 +160,9 @@ export default function CouponsContent() {
       return;
     }
     if (type === 'discount') {
-      const cond = (form.condition_type || '').toLowerCase();
-      if (cond !== 'annual' && cond !== '3months') {
-        showAlert('กรุณาเลือกเงื่อนไขการใช้งาน (ซื้อแบบรายปี หรือ 3 เดือน)', 'error');
+      const conditions = (form.condition_types || []).filter((c) => c === 'annual' || c === '3months');
+      if (conditions.length === 0) {
+        showAlert('กรุณาเพิ่มเงื่อนไขการใช้งานอย่างน้อย 1 รายการ (ซื้อแบบรายปี หรือ 3 เดือน)', 'error');
         return;
       }
       const pct = parseInt(String(form.discount_percent), 10);
@@ -152,7 +181,7 @@ export default function CouponsContent() {
         description: form.description?.trim() || null,
         coupon_type: type,
         value: type === 'extend_days' ? (isNaN(val) ? 0 : val) : 0,
-        condition_type: type === 'discount' ? (form.condition_type || null) : null,
+        condition_type: type === 'discount' ? [...new Set(form.condition_types || [])].filter(Boolean).join(',') || null : null,
         discount_percent: type === 'discount' ? parseInt(String(form.discount_percent), 10) : null,
         valid_from: form.valid_from || null,
         valid_until: form.valid_until || null,
@@ -248,7 +277,7 @@ export default function CouponsContent() {
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">
                       <span className="font-medium">{c.name || '-'}</span>
                       <span className="ml-1 text-xs text-slate-500">
-                        ({c.coupon_type === 'extend_days' ? 'เพิ่มวัน' : c.coupon_type === 'discount' ? `ส่วนลด ${c.discount_percent != null ? c.discount_percent + '%' : ''} ${c.condition_type === 'annual' ? 'รายปี' : c.condition_type === '3months' ? '3 เดือน' : ''}` : c.coupon_type || '-'})
+                        ({c.coupon_type === 'extend_days' ? 'เพิ่มวัน' : c.coupon_type === 'discount' ? `ส่วนลด ${c.discount_percent != null ? c.discount_percent + '%' : ''} ${(c.condition_type || '').split(',').map((x) => x.trim() === 'annual' ? 'รายปี' : x.trim() === '3months' ? '3 เดือน' : '').filter(Boolean).join(', ') || ''}` : c.coupon_type || '-'})
                       </span>
                     </td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{c.coupon_type === 'discount' ? (c.discount_percent != null ? c.discount_percent + '%' : '-') : (c.value != null ? c.value : '-')}</td>
@@ -317,11 +346,35 @@ export default function CouponsContent() {
                 <>
                   <div>
                     <label className="mb-1.5 block font-medium text-gray-800">เงื่อนไขการใช้งาน *</label>
-                    <select className={formControl} value={form.condition_type} onChange={(e) => setForm((f) => ({ ...f, condition_type: e.target.value }))}>
-                      <option value="">-- เลือกเงื่อนไข --</option>
-                      <option value="annual">ซื้อแบบรายปี</option>
-                      <option value="3months">ซื้อแบบ 3 เดือน</option>
-                    </select>
+                    <p className="mb-2 text-xs text-slate-500">เลือกได้หลายเงื่อนไข (คูปองจะใช้ได้กับแพ็กเกจที่ตรงเงื่อนไขใดเงื่อนไขหนึ่ง)</p>
+                    {(form.condition_types || []).map((val, idx) => (
+                      <div key={idx} className="mb-2 flex gap-2">
+                        <select
+                          className={formControl}
+                          value={val}
+                          onChange={(e) => setConditionAt(idx, e.target.value)}
+                        >
+                          {CONDITION_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                          onClick={() => removeCondition(idx)}
+                          title="ลบเงื่อนไข"
+                        >
+                          ลบ
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="rounded-md border border-dashed border-violet-400 bg-violet-50/50 px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                      onClick={addCondition}
+                    >
+                      + เพิ่มเงื่อนไข
+                    </button>
                   </div>
                   <div>
                     <label className="mb-1.5 block font-medium text-gray-800">ส่วนลด (%) *</label>

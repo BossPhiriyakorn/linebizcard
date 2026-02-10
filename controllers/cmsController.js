@@ -1159,8 +1159,9 @@ async function createPackage(req, res) {
         const couponIdVal = coupon_id != null && coupon_id !== '' ? parseInt(coupon_id, 10) : null;
         if (couponIdVal != null && !isNaN(couponIdVal)) {
             const couponRow = await pool.query('SELECT id, condition_type FROM coupons WHERE id = $1 AND coupon_type = $2', [couponIdVal, 'discount']);
-            if (couponRow.rows.length > 0 && (couponRow.rows[0].condition_type === 'annual' || couponRow.rows[0].condition_type === '3months')) {
-                periodVal = couponRow.rows[0].condition_type;
+            if (couponRow.rows.length > 0 && couponRow.rows[0].condition_type) {
+                const firstCond = (couponRow.rows[0].condition_type || '').split(',')[0].trim().toLowerCase();
+                if (firstCond === 'annual' || firstCond === '3months') periodVal = firstCond;
             }
         }
         const requiresPaymentVal = requires_payment !== false && requires_payment !== 'false';
@@ -1197,8 +1198,9 @@ async function updatePackage(req, res) {
         const couponIdVal = coupon_id != null && coupon_id !== '' ? parseInt(coupon_id, 10) : null;
         if (couponIdVal != null && !isNaN(couponIdVal)) {
             const couponRow = await pool.query('SELECT id, condition_type FROM coupons WHERE id = $1 AND coupon_type = $2', [couponIdVal, 'discount']);
-            if (couponRow.rows.length > 0 && (couponRow.rows[0].condition_type === 'annual' || couponRow.rows[0].condition_type === '3months')) {
-                periodVal = couponRow.rows[0].condition_type;
+            if (couponRow.rows.length > 0 && couponRow.rows[0].condition_type) {
+                const firstCond = (couponRow.rows[0].condition_type || '').split(',')[0].trim().toLowerCase();
+                if (firstCond === 'annual' || firstCond === '3months') periodVal = firstCond;
             }
         }
         const finalCouponId = couponIdVal != null && !isNaN(couponIdVal) ? couponIdVal : null;
@@ -1262,9 +1264,11 @@ async function createCoupon(req, res) {
             return res.status(400).json({ success: false, message: 'กรุณาระบุจำนวนวัน (value) เป็นตัวเลขมากกว่า 0' });
         }
         if (type === 'discount') {
-            const cond = (condition_type || '').trim().toLowerCase();
-            if (cond !== 'annual' && cond !== '3months') {
-                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งาน (ซื้อแบบรายปี หรือ 3 เดือน)' });
+            const condRaw = (condition_type || '').trim().toLowerCase();
+            const condParts = condRaw.split(',').map((c) => c.trim()).filter(Boolean);
+            const validParts = condParts.filter((c) => c === 'annual' || c === '3months');
+            if (validParts.length === 0) {
+                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งานอย่างน้อย 1 รายการ (ซื้อแบบรายปี หรือ 3 เดือน)' });
             }
             const pct = parseInt(discount_percent, 10);
             if (isNaN(pct) || pct < 1 || pct > 100) {
@@ -1275,14 +1279,16 @@ async function createCoupon(req, res) {
         const validFrom = valid_from ? new Date(valid_from) : null;
         const validUntil = valid_until ? new Date(valid_until) : null;
         const active = is_active !== false;
-        const condType = (condition_type || '').trim().toLowerCase() || null;
+        const condRaw = (condition_type || '').trim().toLowerCase();
+        const condParts = condRaw.split(',').map((c) => c.trim()).filter((c) => c === 'annual' || c === '3months');
+        const condType = condParts.length > 0 ? [...new Set(condParts)].join(',') : null;
         const discountPct = type === 'discount' ? Math.min(100, Math.max(0, parseInt(discount_percent, 10) || 0)) : null;
 
         const result = await pool.query(
             `INSERT INTO coupons (code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, is_active)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              RETURNING id, code, name, description, coupon_type, value, condition_type, discount_percent, valid_from, valid_until, max_uses, use_count, is_active, created_at`,
-            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType === 'annual' || condType === '3months' ? condType : null, discountPct, validFrom, validUntil, maxUses, active]
+            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType, discountPct, validFrom, validUntil, maxUses, active]
         );
         res.status(201).json({ success: true, message: 'สร้างคูปองแล้ว', data: result.rows[0] });
     } catch (err) {
@@ -1309,9 +1315,11 @@ async function updateCoupon(req, res) {
             return res.status(400).json({ success: false, message: 'กรุณาระบุจำนวนวัน (value) เป็นตัวเลขมากกว่า 0' });
         }
         if (type === 'discount') {
-            const cond = (condition_type || '').trim().toLowerCase();
-            if (cond !== 'annual' && cond !== '3months') {
-                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งาน (ซื้อแบบรายปี หรือ 3 เดือน)' });
+            const condRaw = (condition_type || '').trim().toLowerCase();
+            const condParts = condRaw.split(',').map((c) => c.trim()).filter(Boolean);
+            const validParts = condParts.filter((c) => c === 'annual' || c === '3months');
+            if (validParts.length === 0) {
+                return res.status(400).json({ success: false, message: 'กรุณาเลือกเงื่อนไขการใช้งานอย่างน้อย 1 รายการ (ซื้อแบบรายปี หรือ 3 เดือน)' });
             }
             const pct = parseInt(discount_percent, 10);
             if (isNaN(pct) || pct < 1 || pct > 100) {
@@ -1321,12 +1329,14 @@ async function updateCoupon(req, res) {
         const maxUses = max_uses != null && max_uses !== '' ? parseInt(max_uses, 10) : null;
         const validFrom = valid_from ? new Date(valid_from) : null;
         const validUntil = valid_until ? new Date(valid_until) : null;
-        const condType = (condition_type || '').trim().toLowerCase() || null;
+        const condRaw = (condition_type || '').trim().toLowerCase();
+        const condParts = condRaw.split(',').map((c) => c.trim()).filter((c) => c === 'annual' || c === '3months');
+        const condType = condParts.length > 0 ? [...new Set(condParts)].join(',') : null;
         const discountPct = type === 'discount' ? Math.min(100, Math.max(0, parseInt(discount_percent, 10) || 0)) : null;
 
         await pool.query(
             `UPDATE coupons SET code = $1, name = $2, description = $3, coupon_type = $4, value = $5, condition_type = $6, discount_percent = $7, valid_from = $8, valid_until = $9, max_uses = $10, is_active = $11, updated_at = CURRENT_TIMESTAMP WHERE id = $12`,
-            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType === 'annual' || condType === '3months' ? condType : null, discountPct, validFrom, validUntil, maxUses, is_active !== false, id]
+            [rawCode.toUpperCase(), name ? String(name).trim() : null, description ? String(description).trim() : null, type, isNaN(val) ? 0 : val, condType, discountPct, validFrom, validUntil, maxUses, is_active !== false, id]
         );
         res.json({ success: true, message: 'แก้ไขคูปองแล้ว' });
     } catch (err) {
