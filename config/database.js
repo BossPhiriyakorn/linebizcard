@@ -21,9 +21,10 @@ pool.on('connect', () => {
     }
 });
 
+// เมื่อ idle client เกิด error (เช่น DB restart) — log เท่านั้น ไม่ exit process
+// Pool จะสร้าง connection ใหม่เมื่อมี query ถัดไป; exit ทั้ง process ทำให้ service ล่มไม่จำเป็น
 pool.on('error', (err) => {
-    console.error('❌ Unexpected error on idle client', err);
-    process.exit(-1);
+    console.error('❌ Unexpected error on idle client', err.message || err);
 });
 
 module.exports = pool;

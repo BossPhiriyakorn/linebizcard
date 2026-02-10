@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 const inputClass =
   'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
@@ -32,12 +32,13 @@ function CreateContent() {
       window.history.replaceState({}, '', window.location.pathname);
     }
     if (!getToken()) {
-      router.replace('/');
+      router.replace('/liff/login');
       return;
     }
     fetch('/api/templates', { headers: getHeaders() })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         if (data.success && Array.isArray(data.data)) {
           setTemplates((data.data || []).filter((t) => t.is_active !== false));
         }
@@ -48,8 +49,9 @@ function CreateContent() {
   useEffect(() => {
     if (!getToken() || step !== 2) return;
     fetch('/api/user/profile', { headers: getHeaders() })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         if (data.success && data.data) {
           const p = data.data;
           const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
@@ -125,6 +127,7 @@ function CreateContent() {
         headers: getHeaders(),
         body: fd,
       });
+      if (handleAuthResponse(res)) return;
       const text = await res.text();
       let data;
       try {
@@ -340,11 +343,11 @@ function CreateContent() {
                   <input
                     id="create-image1"
                     type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+                    accept="image/*"
                     onChange={handleImageChange}
                     className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white"
                   />
-                  <small className="mt-1 block text-sm italic text-gray-500">รูปภาพสำหรับการ์ดแรก (การ์ดอื่นใช้ดีไซน์ใน template) รองรับ JPG, PNG, GIF, WebP, HEIC (iPhone) — ระบบแปลงเป็น WebP อัตโนมัติ</small>
+                  <small className="mt-1 block text-sm italic text-gray-500">รูปภาพสำหรับการ์ดแรก (การ์ดอื่นใช้ดีไซน์ใน template) รองรับทุกรูปแบบรูปภาพ สูงสุด 1GB — ระบบแปลงเป็น WebP อัตโนมัติ</small>
                   {imagePreviewUrl && (
                     <div className="mt-3 text-center">
                       <img src={imagePreviewUrl} alt="Preview" className="mx-auto max-h-[200px] max-w-full rounded-lg object-cover shadow" />

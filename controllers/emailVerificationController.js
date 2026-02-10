@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { generateOTP, sendOTPEmail } = require('../services/emailService');
+const { hashSha256 } = require('../utils/encryption');
 
 /**
  * ส่ง OTP ไปยังอีเมล
@@ -71,11 +72,12 @@ async function sendOTP(req, res) {
             [email]
         );
 
-        // บันทึก OTP ใหม่ใน database
+        // บันทึกแฮช OTP (SHA-256) แทน plaintext
+        const otpHash = hashSha256(otpCode);
         await pool.query(
             `INSERT INTO email_verifications (user_id, email, otp_code, expires_at)
              VALUES ($1, $2, $3, $4)`,
-            [user.id, email, otpCode, expiresAt]
+            [user.id, email, otpHash, expiresAt]
         );
 
         // อัปเดต last_otp_sent_at
@@ -89,10 +91,10 @@ async function sendOTP(req, res) {
             await sendOTPEmail(email, otpCode);
         } catch (emailError) {
             console.error('Error sending OTP email:', emailError);
-            // ลบ OTP ที่บันทึกไว้ถ้าส่งอีเมลไม่สำเร็จ
+            // ลบ OTP ที่บันทึกไว้ถ้าส่งอีเมลไม่สำเร็จ (ลบด้วยแฮชที่บันทึกไว้)
             await pool.query(
                 'DELETE FROM email_verifications WHERE email = $1 AND otp_code = $2',
-                [email, otpCode]
+                [email, otpHash]
             );
             return res.status(500).json({
                 success: false,
@@ -138,7 +140,8 @@ async function verifyOTP(req, res) {
             });
         }
 
-        // ค้นหา OTP ใน database
+        // ค้นหา OTP ใน database (เก็บเป็นแฮช SHA-256 — เปรียบเทียบด้วยแฮชที่ส่งมา)
+        const otpHashInput = hashSha256(otp_code);
         const otpResult = await pool.query(
             `SELECT ev.*, u.id as user_id, u.email_verified
              FROM email_verifications ev
@@ -146,16 +149,14 @@ async function verifyOTP(req, res) {
              WHERE ev.email = $1 AND ev.otp_code = $2 AND ev.verified_at IS NULL
              ORDER BY ev.created_at DESC
              LIMIT 1`,
-            [email, otp_code]
+            [email, otpHashInput]
         );
 
         if (otpResult.rows.length === 0) {
-            // เพิ่ม attempts สำหรับ OTP ที่ไม่ถูกต้อง
+            // เพิ่ม attempts สำหรับ OTP ที่ไม่ถูกต้อง (อัปเดตแถวล่าสุดของอีเมลนี้)
             await pool.query(
-                `UPDATE email_verifications 
-                 SET attempts = attempts + 1 
-                 WHERE email = $1 AND verified_at IS NULL
-                 ORDER BY created_at DESC LIMIT 1`,
+                `UPDATE email_verifications SET attempts = attempts + 1
+                 WHERE id = (SELECT id FROM email_verifications WHERE email = $1 AND verified_at IS NULL ORDER BY created_at DESC LIMIT 1)`,
                 [email]
             );
 

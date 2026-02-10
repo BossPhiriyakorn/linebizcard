@@ -4,14 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import CustomerAppBar from '../components/CustomerAppBar';
-
-function getToken() {
-  return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-}
-
-function getHeaders() {
-  return { Authorization: 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
-}
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 function PaymentSummaryContent() {
   const router = useRouter();
@@ -24,10 +17,12 @@ function PaymentSummaryContent() {
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
+  const [linePayConfigured, setLinePayConfigured] = useState(false);
+  const [paymentChannels, setPaymentChannels] = useState([]);
 
   useEffect(() => {
     if (!getToken()) {
-      router.replace('/');
+      router.replace('/liff/login');
       return;
     }
     if (!packageId) {
@@ -36,9 +31,10 @@ function PaymentSummaryContent() {
       return;
     }
     fetch('/api/packages')
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((res) => {
         setLoading(false);
+        if (res == null) return;
         if (res.success && Array.isArray(res.data)) {
           const pkg = res.data.find((p) => String(p.id) === String(packageId));
           setPackageItem(pkg || null);
@@ -46,6 +42,20 @@ function PaymentSummaryContent() {
         } else setAlert({ show: true, msg: 'โหลดแพ็กเกจไม่สำเร็จ', type: 'error' });
       })
       .catch(() => setLoading(false));
+
+    fetch('/api/line-pay/status')
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data && res.data.configured) setLinePayConfigured(true);
+      })
+      .catch(() => {});
+
+    fetch('/api/payment-channels', { headers: getHeaders() })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then((res) => {
+        if (res != null && res.success && Array.isArray(res.data)) setPaymentChannels(res.data);
+      })
+      .catch(() => {});
   }, [packageId, router]);
 
   const handleValidateCoupon = () => {
@@ -57,12 +67,13 @@ function PaymentSummaryContent() {
     setAlert({ show: false, msg: '', type: 'error' });
     fetch('/api/validate-coupon', {
       method: 'POST',
-      headers: getHeaders(),
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ package_id: packageId, coupon_code: couponCode.trim() }),
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
         setValidatingCoupon(false);
+        if (data == null) return;
         if (data.success && data.data) {
           if (data.data.valid) {
             setCouponResult({ valid: true, extra_days: data.data.extra_days, discount_percent: data.data.discount_percent });
@@ -85,20 +96,79 @@ function PaymentSummaryContent() {
     setAlert({ show: false, msg: '', type: 'error' });
     fetch('/api/create-pending-payment', {
       method: 'POST',
-      headers: getHeaders(),
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         package_id: packageId,
         coupon_code: couponCode.trim() || undefined,
       }),
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
         setSubmitting(false);
+        if (data == null) return;
         if (data.success && data.data?.redirect) {
           router.push(data.data.redirect);
           return;
         }
         setAlert({ show: true, msg: data.message || 'สร้างรายการชำระไม่สำเร็จ', type: 'error' });
+      })
+      .catch(() => {
+        setSubmitting(false);
+        setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' });
+      });
+  };
+
+  const cardChannel = paymentChannels.find((ch) => ch.channel_type === 'credit_card' || ch.channel_type === 'debit_card');
+
+  const handlePayWithCard = () => {
+    if (!packageId || !cardChannel) return;
+    setSubmitting(true);
+    setAlert({ show: false, msg: '', type: 'error' });
+    fetch('/api/choose-package', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        package_id: packageId,
+        coupon_code: couponCode.trim() || undefined,
+        payment_channel_id: cardChannel.id,
+      }),
+    })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then((data) => {
+        setSubmitting(false);
+        if (data == null) return;
+        if (data.success) {
+          setAlert({ show: true, msg: data.message || 'ชำระสำเร็จ', type: 'success' });
+          setTimeout(() => router.push('/package'), 1200);
+        } else setAlert({ show: true, msg: data.message || 'ชำระไม่สำเร็จ', type: 'error' });
+      })
+      .catch(() => {
+        setSubmitting(false);
+        setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' });
+      });
+  };
+
+  const handleLinePay = () => {
+    if (!packageId) return;
+    setSubmitting(true);
+    setAlert({ show: false, msg: '', type: 'error' });
+    fetch('/api/line-pay/reserve', {
+      method: 'POST',
+      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        package_id: packageId,
+        coupon_code: couponCode.trim() || undefined,
+      }),
+    })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then((data) => {
+        setSubmitting(false);
+        if (data == null) return;
+        if (data.success && data.data?.redirectUrl) {
+          window.location.href = data.data.redirectUrl;
+          return;
+        }
+        setAlert({ show: true, msg: data.message || 'LINE Pay ยังไม่เปิดใช้', type: 'error' });
       })
       .catch(() => {
         setSubmitting(false);
@@ -197,6 +267,27 @@ function PaymentSummaryContent() {
         </div>
 
         <div className="flex flex-col gap-3">
+          {price > 0 && cardChannel && (
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={handlePayWithCard}
+              className="w-full rounded-lg bg-violet-600 py-3.5 font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+            >
+              {submitting ? 'กำลังดำเนินการ...' : 'ชำระด้วยบัตรที่ลงทะเบียน'}
+            </button>
+          )}
+          {price > 0 && (
+            <button
+              type="button"
+              disabled={submitting || !linePayConfigured}
+              onClick={handleLinePay}
+              title={!linePayConfigured ? 'รอเชื่อมต่อ LINE Pay (ตั้งค่าใน .env)' : undefined}
+              className={`w-full rounded-lg py-3.5 font-semibold text-white disabled:opacity-60 ${linePayConfigured ? 'bg-[#00B900] hover:bg-[#009900]' : 'bg-gray-500 cursor-not-allowed'}`}
+            >
+              {submitting ? 'กำลังดำเนินการ...' : linePayConfigured ? 'ชำระด้วย LINE Pay' : 'ชำระด้วย LINE Pay (รอเปิดใช้)'}
+            </button>
+          )}
           <button
             type="button"
             disabled={submitting}

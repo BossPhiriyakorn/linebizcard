@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra');
 const sharp = require('sharp');
+const { getCustomerUploadDir } = require('../middleware/upload');
 
 const uploadDir = process.env.UPLOAD_DIR || 'uploads/images';
 
@@ -58,10 +59,11 @@ async function convertToWebp(inputPath) {
 
 /**
  * แปลงรูปที่อยู่ใน req.file หรือ req.files เป็น WebP แล้วอัปเดต filename ใน req
- * @param {object} req - Express request (ต้องมี req.file หรือ req.files หลัง multer)
+ * รองรับโฟลเดอร์แยกตาม user id (uploads/images/{user_id}/)
+ * @param {object} req - Express request (ต้องมี req.file หรือ req.files หลัง multer, และ req.user ถ้าเป็นลูกค้า)
  */
 async function convertUploadedToWebp(req) {
-    const baseDir = path.isAbsolute(uploadDir) ? uploadDir : path.join(process.cwd(), uploadDir);
+    const baseDir = req.user && req.user.id != null ? getCustomerUploadDir(req) : (path.isAbsolute(uploadDir) ? uploadDir : path.join(process.cwd(), uploadDir));
 
     if (req.file) {
         const inputPath = path.join(baseDir, req.file.filename);

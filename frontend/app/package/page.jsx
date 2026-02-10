@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -23,17 +23,11 @@ export default function PackagePage() {
   useEffect(() => {
     const t = getToken();
     if (!t) {
-      router.replace('/');
+      router.replace('/liff/login');
       return;
     }
     fetch('/api/user/profile', { headers: getHeaders() })
-      .then((r) => {
-        if (r.status === 401) {
-          router.replace('/');
-          return null;
-        }
-        return r.json();
-      })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
         setLoading(false);
         if (data?.success && data.data) setProfile(data.data);
@@ -51,15 +45,16 @@ export default function PackagePage() {
       method: 'POST',
       headers: getHeaders(),
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
         setCancelling(false);
+        if (data == null) return;
         if (data?.success) {
           setAlert({ show: true, msg: data.message || 'ยกเลิกแพ็กเกจแล้ว', type: 'success' });
           fetch('/api/user/profile', { headers: getHeaders() })
-            .then((res) => (res.status === 401 ? null : res.json()))
+            .then((res) => (handleAuthResponse(res) ? null : res.json()))
             .then((d) => {
-              if (d?.success && d.data) setProfile(d.data);
+              if (d != null && d?.success && d.data) setProfile(d.data);
             });
         } else setAlert({ show: true, msg: data?.message || 'ดำเนินการไม่สำเร็จ', type: 'error' });
       })

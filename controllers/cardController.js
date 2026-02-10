@@ -5,6 +5,7 @@ require('dotenv').config();
 const { generateUniqueId, getJsonFileName } = require('../utils/uniqueId');
 const { replaceTemplatePlaceholders, createFlexMessageJson } = require('../utils/templateEngine');
 const { convertUploadedToWebp } = require('../utils/imageToWebp');
+const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
 
 // สร้างโฟลเดอร์ json ถ้ายังไม่มี
 const jsonDir = path.join(__dirname, '../json');
@@ -97,7 +98,14 @@ async function createCard(req, res) {
                 'SELECT first_name, last_name, nickname, phone, email FROM users WHERE id = $1',
                 [userId]
             );
-            profile = userProfile.rows[0] || {};
+            const row = userProfile.rows[0] || {};
+            profile = {
+                first_name: decryptIfEncrypted(row.first_name),
+                last_name: decryptIfEncrypted(row.last_name),
+                nickname: decryptIfEncrypted(row.nickname),
+                phone: decryptIfEncrypted(row.phone),
+                email: row.email
+            };
         } catch (profileErr) {
             // ถ้าตาราง users ยังไม่มีคอลัมน์ first_name, last_name, phone (ยังไม่ได้รัน migration)
             // ใช้เฉพาะ id, username, email
@@ -114,7 +122,7 @@ async function createCard(req, res) {
             try {
                 await convertUploadedToWebp(req);
             } catch (err) {
-                console.error('Convert to WebP error:', err);
+                console.error('Convert to WebP error:', err && err.message ? err.message : '');
                 return res.status(500).json({
                     success: false,
                     message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
@@ -122,19 +130,20 @@ async function createCard(req, res) {
             }
         }
 
-        // สร้าง image URLs (รองรับ 2 รูปภาพ: image1 และ image2)
+        // สร้าง image URLs — เก็บแยกโฟลเดอร์ตาม user id (uploads/images/{user_id}/)
+        const uploadBase = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR || 'uploads/images'}`;
+        const userSegment = String(userId);
         let imageUrl1 = '';
         let imageUrl2 = '';
-        
         if (req.files) {
             if (req.files.image1 && req.files.image1[0]) {
-                imageUrl1 = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR}/${req.files.image1[0].filename}`;
+                imageUrl1 = `${uploadBase}/${userSegment}/${req.files.image1[0].filename}`;
             }
             if (req.files.image2 && req.files.image2[0]) {
-                imageUrl2 = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR}/${req.files.image2[0].filename}`;
+                imageUrl2 = `${uploadBase}/${userSegment}/${req.files.image2[0].filename}`;
             }
         } else if (req.file) {
-            imageUrl1 = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR}/${req.file.filename}`;
+            imageUrl1 = `${uploadBase}/${userSegment}/${req.file.filename}`;
             imageUrl2 = imageUrl1;
         }
         // การ์ดที่ 2–4 ใช้ดีไซน์ใน template — ถ้าไม่มีรูปการ์ด 2 ให้ใช้รูปการ์ดแรก
@@ -170,7 +179,6 @@ async function createCard(req, res) {
             processedTemplate = replaceTemplatePlaceholders(templateJson, data);
         } catch (templateError) {
             console.error('Template processing error:', templateError.message);
-            console.error('Template error stack:', templateError.stack);
             return res.status(500).json({
                 success: false,
                 message: 'เกิดข้อผิดพลาดในการประมวลผล template: ' + templateError.message
@@ -197,7 +205,7 @@ async function createCard(req, res) {
         await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
         jsonWrittenPath = jsonFilePath;
 
-        // บันทึกลง Database (expires_at ตามสมาชิกหรือ +30 วัน, card_type ตาม template)
+        // บันทึกลง Database (PII เข้ารหัส AES-256)
         const insertResult = await pool.query(
             `INSERT INTO user_cards 
             (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type)
@@ -208,11 +216,11 @@ async function createCard(req, res) {
                 userId,
                 templateId,
                 jsonFileName,
-                fullName || name,
-                phone || null,
-                email || null,
+                encrypt(fullName || name || ''),
+                encrypt(phone || null),
+                encrypt(email || null),
                 imageUrl1 || null,
-                description || null,
+                encrypt(description || null),
                 JSON.stringify(flexMessageJson),
                 liffUrl,
                 expiresAt,
@@ -222,7 +230,7 @@ async function createCard(req, res) {
 
         const card = insertResult.rows[0];
         if (process.env.NODE_ENV !== 'production') {
-            console.log('Card created: id=%s user_id=%s unique_id=%s', card.id, userId, card.unique_id);
+            console.log('Card created: card_id=' + card.id);
         }
 
         if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
@@ -240,10 +248,10 @@ async function createCard(req, res) {
         });
     } catch (error) {
         const dbDetail = error.detail || error.message;
-        console.error('Create card error:', error.message, 'code:', error.code, 'detail:', error.detail);
+        console.error('Create card error:', error.message, 'code:', error.code || '');
         // ถ้าเขียน JSON ไปแล้วแต่ INSERT ล้มเหลว ลบไฟล์ที่เขียนไว้เพื่อไม่ให้มีไฟล์ค้าง
         if (jsonWrittenPath) {
-            fs.remove(jsonWrittenPath).catch((err) => console.error('Error removing orphan JSON:', err));
+            fs.remove(jsonWrittenPath).catch((err) => console.error('Error removing orphan JSON:', err && err.message ? err.message : ''));
         }
         const msg = process.env.NODE_ENV !== 'production' && dbDetail
             ? `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message} (${dbDetail})`
@@ -271,7 +279,7 @@ async function getMyCards(req, res) {
 
         const result = await pool.query(
             `SELECT 
-                id, unique_id, template_id, user_name, user_phone, user_email, 
+                id, unique_id, template_id, user_name, user_phone, user_email, user_description,
                 user_image, liff_url, created_at, updated_at, expires_at, card_type,
                 (SELECT name FROM templates WHERE id = user_cards.template_id) as template_name
             FROM user_cards 
@@ -280,12 +288,21 @@ async function getMyCards(req, res) {
             [userId]
         );
 
+        // ถอดรหัส PII ก่อนส่งให้ frontend แสดงผล
+        const data = result.rows.map((row) => ({
+            ...row,
+            user_name: decryptIfEncrypted(row.user_name),
+            user_phone: decryptIfEncrypted(row.user_phone),
+            user_email: decryptIfEncrypted(row.user_email),
+            user_description: row.user_description != null && row.user_description !== '' ? decryptIfEncrypted(row.user_description) : (row.user_description ?? null)
+        }));
+
         res.json({
             success: true,
-            data: result.rows
+            data
         });
     } catch (error) {
-        console.error('Get my cards error:', error);
+        console.error('Get my cards error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการดึงข้อมูลการ์ด'
@@ -319,12 +336,21 @@ async function getCardById(req, res) {
             });
         }
 
+        const row = result.rows[0];
+        const data = {
+            ...row,
+            user_name: decryptIfEncrypted(row.user_name),
+            user_phone: decryptIfEncrypted(row.user_phone),
+            user_email: decryptIfEncrypted(row.user_email),
+            user_description: row.user_description ? decryptIfEncrypted(row.user_description) : row.user_description
+        };
+
         res.json({
             success: true,
-            data: result.rows[0]
+            data
         });
     } catch (error) {
-        console.error('Get card error:', error);
+        console.error('Get card error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการดึงข้อมูลการ์ด'
@@ -361,6 +387,10 @@ async function updateCard(req, res) {
 
         const card = cardResult.rows[0];
         const templateId = card.template_id;
+        const cardName = decryptIfEncrypted(card.user_name);
+        const cardPhone = decryptIfEncrypted(card.user_phone);
+        const cardEmail = decryptIfEncrypted(card.user_email);
+        const cardDesc = card.user_description ? decryptIfEncrypted(card.user_description) : card.user_description;
 
         const templateResult = await pool.query(
             'SELECT * FROM templates WHERE id = $1',
@@ -388,7 +418,7 @@ async function updateCard(req, res) {
             try {
                 await convertUploadedToWebp(req);
             } catch (err) {
-                console.error('Convert to WebP error:', err);
+                console.error('Convert to WebP error:', err && err.message ? err.message : '');
                 return res.status(500).json({
                     success: false,
                     message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
@@ -396,23 +426,26 @@ async function updateCard(req, res) {
             }
         }
 
+        const uploadBase = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR || 'uploads/images'}`;
+        const userSegment = String(userId);
         let imageUrl1 = card.user_image || '';
         if (req.files && req.files.image1 && req.files.image1[0]) {
-            imageUrl1 = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR}/${req.files.image1[0].filename}`;
+            imageUrl1 = `${uploadBase}/${userSegment}/${req.files.image1[0].filename}`;
             if (card.user_image) {
-                const oldPath = path.join(__dirname, '..', card.user_image.replace(process.env.BASE_URL || '', '').replace(/^\//, ''));
+                const rel = card.user_image.replace(process.env.BASE_URL || '', '').replace(/^\//, '');
+                const oldPath = path.join(__dirname, '..', rel);
                 fs.remove(oldPath).catch(() => {});
             }
         }
         const imageUrl2 = imageUrl1;
 
-        const fullName = (name !== undefined && name !== null) ? String(name).trim() : (card.user_name || '');
+        const fullName = (name !== undefined && name !== null) ? String(name).trim() : (cardName || '');
         const liffUrl = card.liff_url;
 
         const data = {
             name: fullName || '',
-            phone: (phone !== undefined && phone !== null) ? String(phone) : (card.user_phone || ''),
-            email: (email !== undefined && email !== null) ? String(email) : (card.user_email || ''),
+            phone: (phone !== undefined && phone !== null) ? String(phone) : (cardPhone || ''),
+            email: (email !== undefined && email !== null) ? String(email) : (cardEmail || ''),
             image_url1: imageUrl1,
             image_url2: imageUrl2,
             image_url: imageUrl1,
@@ -446,18 +479,18 @@ async function updateCard(req, res) {
         const jsonFilePath = path.join(jsonDir, card.json_file_name);
         await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
 
-        const descriptionVal = (description !== undefined && description !== null) ? String(description) : (card.user_description || '');
+        const descriptionVal = (description !== undefined && description !== null) ? String(description) : (cardDesc || '');
         await pool.query(
             `UPDATE user_cards SET 
                 user_name = $1, user_phone = $2, user_email = $3, user_image = $4, 
                 user_description = $5, flex_message_json = $6, updated_at = CURRENT_TIMESTAMP 
             WHERE id = $7 AND user_id = $8`,
             [
-                fullName || null,
-                data.phone || null,
-                data.email || null,
+                encrypt(fullName || null),
+                encrypt(data.phone || null),
+                encrypt(data.email || null),
                 imageUrl1 || null,
-                descriptionVal || null,
+                encrypt(descriptionVal || null),
                 JSON.stringify(flexMessageJson),
                 id,
                 userId
@@ -481,7 +514,7 @@ async function updateCard(req, res) {
             }
         });
     } catch (error) {
-        console.error('Update card error:', error);
+        console.error('Update card error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการแก้ไขการ์ด: ' + error.message
@@ -523,16 +556,17 @@ async function deleteCard(req, res) {
         try {
             await fs.remove(jsonFilePath);
         } catch (error) {
-            console.error('Error deleting JSON file:', error);
+            console.error('Error deleting JSON file:', error && error.message ? error.message : '');
         }
 
-        // ลบรูปภาพ (ถ้ามี)
+        // ลบรูปภาพ (ถ้ามี) — รองรับทั้ง path เก่า (uploads/images/xxx) และ path ใหม่ (uploads/images/userId/xxx)
         if (card.user_image) {
-            const imagePath = path.join(__dirname, '..', card.user_image.replace(process.env.BASE_URL, ''));
+            const rel = card.user_image.replace(process.env.BASE_URL || '', '').replace(/^\//, '');
+            const imagePath = path.join(__dirname, '..', rel);
             try {
                 await fs.remove(imagePath);
             } catch (error) {
-                console.error('Error deleting image:', error);
+                console.error('Error deleting image:', error && error.message ? error.message : '');
             }
         }
 
@@ -547,7 +581,7 @@ async function deleteCard(req, res) {
             message: 'ลบการ์ดสำเร็จ'
         });
     } catch (error) {
-        console.error('Delete card error:', error);
+        console.error('Delete card error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการลบการ์ด'

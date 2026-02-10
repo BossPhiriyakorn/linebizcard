@@ -33,7 +33,14 @@ const nextConfig = {
     root: path.resolve(__dirname),
   },
   // อนุญาต origin จากโดเมนจริง (เช่น Cloudflare Tunnel) — แก้ "Blocked cross-origin request to /_next/*" และ 502
-  ...(devOrigins.length > 0 && { allowedDevOrigins: devOrigins }),
+  allowedDevOrigins: devOrigins,
+  // ลูกค้าเข้าใช้งานผ่าน LINE — /login และ /register พาไปหน้า LIFF login
+  async redirects() {
+    return [
+      { source: '/login', destination: '/liff/login', permanent: false },
+      { source: '/register', destination: '/liff/login', permanent: false },
+    ];
+  },
 };
 
 module.exports = nextConfig;

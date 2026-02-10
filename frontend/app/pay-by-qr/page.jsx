@@ -4,14 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import CustomerAppBar from '../components/CustomerAppBar';
-
-function getToken() {
-  return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-}
-
-function getHeaders() {
-  return { Authorization: 'Bearer ' + getToken() };
-}
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 function PayByQrContent() {
   const router = useRouter();
@@ -26,7 +19,7 @@ function PayByQrContent() {
 
   useEffect(() => {
     if (!getToken()) {
-      router.replace('/');
+      router.replace('/liff/login');
       return;
     }
     if (!id) {
@@ -35,9 +28,10 @@ function PayByQrContent() {
       return;
     }
     fetch('/api/payment-requests/' + id, { headers: getHeaders() })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((res) => {
         setLoading(false);
+        if (res == null) return;
         if (res?.success && res.data) setData(res.data);
         else setError(res?.message || 'โหลดไม่สำเร็จ');
       })
@@ -58,9 +52,10 @@ function PayByQrContent() {
       headers: getHeaders(),
       body: formData,
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((res) => {
         setUploading(false);
+        if (res == null) return;
         if (res?.success) {
           setUploaded(true);
           setData((d) => (d ? { ...d, status: 'slip_uploaded', slip_image_url: res.data?.slip_image_url } : d));

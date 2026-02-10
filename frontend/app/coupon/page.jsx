@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 export default function CouponPage() {
   const [code, setCode] = useState('');
@@ -14,17 +14,12 @@ export default function CouponPage() {
   useEffect(() => {
     const t = getToken();
     if (!t) {
-      window.location.href = '/';
+      window.location.href = '/liff/login';
       return;
     }
     fetch('/api/user/profile', { headers: getHeaders() })
-      .then((r) => {
-        if (r.status === 401) {
-          window.location.href = '/';
-          return null;
-        }
-        setLoading(false);
-      })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then(() => setLoading(false))
       .catch(() => setLoading(false));
   }, []);
 
@@ -43,6 +38,7 @@ export default function CouponPage() {
         headers: { ...getHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: raw }),
       });
+      if (handleAuthResponse(res)) return;
       const data = await res.json();
       if (data.success) {
         setAlert({ show: true, msg: data.message || 'ใช้คูปองสำเร็จ', type: 'success' });

@@ -19,6 +19,15 @@ const app = express();
 // ต้องเปิดเมื่อรันหลัง proxy (เช่น Cloudflare Tunnel) เพื่อให้ rate-limit อ่าน IP ถูกต้อง
 app.set('trust proxy', 1);
 
+// Security headers — ลดความเสี่ยง XSS, clickjacking, MIME sniffing
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -37,7 +46,7 @@ app.use('/json', express.static('json'));
 app.all('*', (req, res) => handle(req, res));
 
 app.use((err, req, res, nextHandler) => {
-  console.error('Error:', err);
+  console.error('Error:', err.message || err);
   res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในระบบ: ' + err.message });
 });
 
@@ -47,7 +56,8 @@ app.use((req, res) => {
 
 // ป้องกัน process crash จาก unhandled rejection (เช่น ใน create-card) — log แล้วไม่ exit
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  const msg = reason && typeof reason === 'object' && reason.message ? reason.message : String(reason);
+  console.error('Unhandled Rejection:', msg);
 });
 
 const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 ให้ Cloudflare Tunnel / proxy เข้าถึงได้
@@ -58,6 +68,7 @@ nextApp.prepare().then(() => {
     console.log('📁 Environment: ' + (process.env.NODE_ENV || 'development'));
     console.log('🔗 LIFF ID: ' + (process.env.LIFF_ID || ''));
     console.log('📦 Frontend: Next.js (same port)');
+    console.log('🔌 API CMS: /api/cms (ต้องรันเซิร์ฟเวอร์นี้จากโฟลเดอร์หลัก: npm run dev)');
   });
 }).catch((err) => {
   console.error('Next.js prepare failed:', err);

@@ -7,6 +7,28 @@ import { useCmsAlert } from '../hooks/useCmsAlert';
 const formControl =
   'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20';
 
+const glassCard = {
+  background: 'rgba(255,255,255,0.75)',
+  backdropFilter: 'blur(12px)',
+  WebkitBackdropFilter: 'blur(12px)',
+  border: '1px solid rgba(255,255,255,0.8)',
+};
+
+function StatCard({ icon, value, label }) {
+  return (
+    <div
+      className="relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md md:p-6"
+      style={glassCard}
+    >
+      <div className="mb-3 flex items-center justify-center rounded-xl bg-violet-100 text-2xl w-11 h-11">
+        {icon}
+      </div>
+      <div className="text-2xl font-bold text-violet-700 md:text-3xl">{value}</div>
+      <div className="mt-1 text-sm text-slate-500">{label}</div>
+    </div>
+  );
+}
+
 export default function TemplatesPage() {
   const [alert, showAlert] = useCmsAlert();
   const [list, setList] = useState([]);
@@ -93,6 +115,48 @@ export default function TemplatesPage() {
       .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
   };
 
+  const onDelete = (id, name, isActive) => {
+    if (isActive !== false) {
+      showAlert('กรุณาปิดใช้งานการ์ดก่อนจึงจะลบได้', 'error');
+      return;
+    }
+    if (!confirm(`ต้องการลบแทมเพลต "${name || 'นี้'}" ใช่หรือไม่?\n\nการลบนี้จะลบข้อมูลออกจากฐานข้อมูลถาวรและไม่สามารถกู้คืนได้`)) return;
+    fetch('/api/cms/templates/' + id, { method: 'DELETE', headers: getCmsHeaders() })
+      .then((r) => {
+        if (handleCmsResponse(r)) return { _redirect: true };
+        const ct = r.headers.get('content-type') || '';
+        return r.json()
+          .then((data) => ({ status: r.status, data }))
+          .catch(() => ({ status: r.status, data: null }));
+      })
+      .then((payload) => {
+        if (payload._redirect) return;
+        const { status, data } = payload;
+        if (status === 404) {
+          if (data && typeof data.message === 'string') {
+            showAlert(data.message, 'error');
+          } else {
+            showAlert(
+              'ไม่พบ API ลบแทมเพลต (อาจรันแค่ Next.js). กรุณารันเซิร์ฟเวอร์จากโฟลเดอร์หลัก: npm run dev',
+              'error'
+            );
+          }
+          return;
+        }
+        if (status === 400 && data && typeof data.message === 'string') {
+          showAlert(data.message, 'error');
+          return;
+        }
+        if (data && data.success) {
+          showAlert('ลบแทมเพลตแล้ว', 'success');
+          load();
+        } else {
+          showAlert(data?.message || 'ลบไม่สำเร็จ', 'error');
+        }
+      })
+      .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
+  };
+
   const save = () => {
     const { name, description, send_message, template_json, sample_image_urls } = form;
     if (!name?.trim() || !template_json?.trim()) {
@@ -148,6 +212,13 @@ export default function TemplatesPage() {
           {alert.msg}
         </div>
       )}
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard icon="📄" value={loading ? '-' : list.length} label="จำนวนแทมเพลตทั้งหมด" />
+        <StatCard icon="✅" value={loading ? '-' : list.filter((t) => t.is_active !== false).length} label="จำนวนแทมเพลตที่ใช้งาน" />
+        <StatCard icon="⏹" value={loading ? '-' : list.filter((t) => t.is_active === false).length} label="จำนวนแทมเพลตที่ไม่ได้ใช้งาน" />
+      </div>
+
       <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 font-semibold">
           <span>รายการแทมเพลต</span>
@@ -158,35 +229,6 @@ export default function TemplatesPage() {
           >
             + เพิ่มแทมเพลต
           </button>
-        </div>
-        <div className="grid grid-cols-1 gap-4 border-b border-gray-200 p-4 md:grid-cols-3 md:p-5">
-          <div className="flex min-w-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-400">
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <div className="text-2xl font-bold text-violet-700 md:text-3xl">{loading ? '-' : list.length}</div>
-            <div className="mt-1 text-sm text-slate-500">จำนวนแทมเพลตทั้งหมด</div>
-          </div>
-          <div className="flex min-w-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-400">
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="text-2xl font-bold text-violet-700 md:text-3xl">{loading ? '-' : list.filter((t) => t.is_active !== false).length}</div>
-            <div className="mt-1 text-sm text-slate-500">จำนวนแทมเพลตที่ใช้งาน</div>
-          </div>
-          <div className="flex min-w-0 flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-400">
-              <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="text-2xl font-bold text-violet-700 md:text-3xl">{loading ? '-' : list.filter((t) => t.is_active === false).length}</div>
-            <div className="mt-1 text-sm text-slate-500">จำนวนแทมเพลตที่ไม่ได้ใช้งาน</div>
-          </div>
         </div>
         <div className="border-b border-gray-200 px-4 py-3 md:px-5">
           <span className="mr-3 text-sm font-medium text-slate-600">แสดง:</span>
@@ -282,33 +324,48 @@ export default function TemplatesPage() {
                     </td>
                     <td className="border-b border-gray-200 px-3 py-2 text-sm md:px-4 md:py-3">{t.created_at ? new Date(t.created_at).toLocaleDateString('th-TH') : '-'}</td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">
-                      <button
-                        type="button"
-                        className="mr-3 inline-flex items-center justify-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300"
-                        onClick={() => openEdit(t.id)}
-                      >
-                        แก้ไข
-                      </button>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={t.is_active !== false}
-                        title={t.is_active !== false ? 'ปิดใช้' : 'เปิดใช้'}
-                        className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
-                          t.is_active !== false ? 'bg-green-500' : 'bg-gray-400'
-                        }`}
-                        onClick={() => toggleActive(t.id, t.is_active !== false)}
-                      >
-                        <span className="absolute inset-y-0 flex w-full items-center justify-between px-1.5 text-xs font-medium text-white">
-                          <span className={t.is_active !== false ? 'opacity-100' : 'opacity-0'}>ON</span>
-                          <span className={t.is_active !== false ? 'opacity-0' : 'opacity-100'}>OFF</span>
-                        </span>
-                        <span
-                          className={`pointer-events-none inline-flex h-6 w-6 shrink-0 transform items-center justify-center rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
-                            t.is_active !== false ? 'translate-x-7' : 'translate-x-0.5'
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300"
+                          onClick={() => openEdit(t.id)}
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          type="button"
+                          title={t.is_active !== false ? 'กรุณาปิดใช้การ์ดก่อนจึงจะลบได้' : undefined}
+                          disabled={t.is_active !== false}
+                          className={`inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium text-white ${
+                            t.is_active !== false
+                              ? 'cursor-not-allowed bg-red-400'
+                              : 'bg-red-600 hover:bg-red-700'
                           }`}
-                        />
-                      </button>
+                          onClick={() => onDelete(t.id, t.name, t.is_active)}
+                        >
+                          ลบ
+                        </button>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={t.is_active !== false}
+                          title={t.is_active !== false ? 'ปิดใช้' : 'เปิดใช้'}
+                          className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
+                            t.is_active !== false ? 'bg-green-500' : 'bg-gray-400'
+                          }`}
+                          onClick={() => toggleActive(t.id, t.is_active !== false)}
+                        >
+                          <span className="absolute inset-y-0 flex w-full items-center justify-between px-1.5 text-xs font-medium text-white">
+                            <span className={t.is_active !== false ? 'opacity-100' : 'opacity-0'}>ON</span>
+                            <span className={t.is_active !== false ? 'opacity-0' : 'opacity-100'}>OFF</span>
+                          </span>
+                          <span
+                            className={`pointer-events-none inline-flex h-6 w-6 shrink-0 transform items-center justify-center rounded-full bg-white shadow-md transition-transform duration-200 ease-out ${
+                              t.is_active !== false ? 'translate-x-7' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -393,8 +450,39 @@ export default function TemplatesPage() {
               </div>
               <div>
                 <label className="mb-1.5 block font-medium text-gray-800">JSON แทมเพลต *</label>
+                <div className="mb-2">
+                  <a
+                    href="https://developers.line.biz/flex-simulator/?status=success"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-md bg-[#00B900] px-3 py-2 text-sm font-medium text-white hover:bg-[#009900]"
+                  >
+                    เปิดหน้าออกแบบ Flex Message Simulator
+                  </a>
+                </div>
                 <textarea className={formControl} rows={12} placeholder="วางโค้ด JSON จาก Flex Simulator" value={form.template_json} onChange={(e) => setForm((f) => ({ ...f, template_json: e.target.value }))} />
-                <small className="mt-1 block text-slate-500">วางโค้ด JSON ที่ออกแบบจาก Flex Simulator</small>
+                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                  <p className="mb-1.5 font-medium text-slate-800">ใส่ placeholder ใน JSON (ตอนออกแบบเสร็จ ก่อน Copy มาวาง) — ระบบจะแทนที่ด้วยข้อมูลที่ผู้ใช้กรอกในฟอร์มสร้างการ์ด</p>
+                  <p className="mb-1 font-medium text-slate-700">ข้อความ:</p>
+                  <ul className="list-inside list-disc space-y-0.5 text-slate-600 mb-2">
+                    <li><code className="rounded bg-slate-200 px-1">{'{name}'}</code> → ช่องที่แสดงชื่อ-นามสกุล</li>
+                    <li><code className="rounded bg-slate-200 px-1">{'{phone}'}</code> หรือ <code className="rounded bg-slate-200 px-1">{'{Tel}'}</code> → ช่องที่แสดงเบอร์โทร</li>
+                    <li><code className="rounded bg-slate-200 px-1">{'{email}'}</code> → ช่องที่แสดงอีเมล</li>
+                    <li><code className="rounded bg-slate-200 px-1">{'{description}'}</code> → ช่องที่แสดงรายละเอียด</li>
+                  </ul>
+                  <p className="mb-1 font-medium text-slate-700">รูปภาพ:</p>
+                  <ul className="list-inside list-disc space-y-0.5 text-slate-600 mb-2">
+                    <li><code className="rounded bg-slate-200 px-1">{'{user_image}'}</code> หรือ <code className="rounded bg-slate-200 px-1">{'{image_url}'}</code> → ใน <code className="rounded bg-slate-200 px-1">&quot;url&quot;</code> ตำแหน่งที่แสดงรูปหลัก (การ์ดใบแรก)</li>
+                    <li><code className="rounded bg-slate-200 px-1">{'{user_image2}'}</code> หรือ <code className="rounded bg-slate-200 px-1">{'{image_url2}'}</code> → รูปการ์ดใบที่สอง (ถ้ามี)</li>
+                  </ul>
+                  <p className="mb-1 font-medium text-slate-700">ปุ่มแชร์ / ปุ่มโทร-เมล:</p>
+                  <ul className="list-inside list-disc space-y-0.5 text-slate-600 mb-2">
+                    <li><code className="rounded bg-slate-200 px-1">{'{liff_url}'}</code> → ใส่ใน <code className="rounded bg-slate-200 px-1">&quot;uri&quot;</code> ของปุ่มแชร์ (ให้กดแล้วเปิดการ์ดใน LINE)</li>
+                    <li>ปุ่มโทร: <code className="rounded bg-slate-200 px-1">&quot;uri&quot;: &quot;tel:{'{phone}'}&quot;</code></li>
+                    <li>ปุ่มเมล: <code className="rounded bg-slate-200 px-1">&quot;uri&quot;: &quot;mailto:{'{email}'}&quot;</code></li>
+                  </ul>
+                  <p className="mt-1 text-slate-600">ออกแบบใน Flex Simulator เสร็จแล้ว Copy JSON มาแทนที่ข้อความ/URL ตัวอย่างด้วย placeholder ข้างบน แล้วค่อยวางในกรอบด้านบน</p>
+                </div>
               </div>
               <div className="flex justify-end gap-2 pt-4">
                 <button

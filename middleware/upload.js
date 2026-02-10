@@ -5,15 +5,24 @@ require('dotenv').config();
 
 // สร้างโฟลเดอร์ uploads/images ถ้ายังไม่มี
 const uploadDir = process.env.UPLOAD_DIR || 'uploads/images';
-fs.ensureDirSync(uploadDir);
+const uploadDirAbs = path.isAbsolute(uploadDir) ? uploadDir : path.join(process.cwd(), uploadDir);
+fs.ensureDirSync(uploadDirAbs);
 
-// Configure storage
+/**
+ * โฟลเดอร์อัปโหลดของลูกค้า: uploads/images/{user_id}/ — ต้องรันหลัง auth เพื่อให้มี req.user.id
+ */
+function getCustomerUploadDir(req) {
+    const uid = req.user && req.user.id != null ? String(req.user.id) : '0';
+    const dir = path.join(uploadDirAbs, uid);
+    fs.ensureDirSync(dir);
+    return dir;
+}
+
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, uploadDir);
+        cb(null, getCustomerUploadDir(req));
     },
     filename: function (req, file, cb) {
-        // ใช้ชื่อไฟล์เฉพาะ ASCII เพื่อให้ URL ใน Flex Message ใช้ได้กับ LINE (ป้องกัน 404 / การแชร์ไม่เห็นการ์ด)
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
         const safeExt = ext.startsWith('.') ? ext : '.' + ext;
@@ -21,23 +30,28 @@ const storage = multer.diskStorage({
     }
 });
 
-// File filter (การ์ด + สลิป): รองรับ jpg, png, gif, webp, heic, heif รวมรูปจาก iPhone
+// File filter (การ์ด + สลิป): รองรับทุกรูปแบบรูปภาพ (ถ้า ALLOWED_FILE_TYPES ว่าง = รับทุกนามสกุลที่ขึ้นต้นด้วยรูป)
+const DEFAULT_IMAGE_EXT = 'jpg,jpeg,png,gif,webp,heic,heif,bmp,tiff,tif,ico,avif';
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'jpg,jpeg,png,gif,webp,heic,heif').split(',').map(s => s.trim());
+    const envTypes = (process.env.ALLOWED_FILE_TYPES || '').trim();
+    const allowedTypes = (envTypes || DEFAULT_IMAGE_EXT).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
     
-    if (allowedTypes.includes(ext)) {
+    if (allowedTypes.length === 0 || allowedTypes.includes(ext)) {
         cb(null, true);
     } else {
         cb(new Error(`ประเภทไฟล์ไม่รองรับ อนุญาตเฉพาะ: ${allowedTypes.join(', ')}`), false);
     }
 };
 
+// ขนาดไฟล์สูงสุด default 1GB
+const MAX_FILE_SIZE_DEFAULT = 1073741824; // 1GB
+
 // Configure multer
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 // 5MB default
+        fileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT
     },
     fileFilter: fileFilter
 });
@@ -65,7 +79,7 @@ const cmsQrDir = path.join(process.cwd(), 'uploads/cms/qr');
 fs.ensureDirSync(cmsSettingsDir);
 fs.ensureDirSync(cmsQrDir);
 
-const cmsAllowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+const cmsAllowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'ico', 'avif'];
 const cmsFileFilter = (req, file, cb) => {
     const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/^\./, '');
     if (cmsAllowedExt.includes(ext)) {
@@ -95,13 +109,13 @@ const cmsQrStorage = multer.diskStorage({
 
 const uploadCmsSettings = multer({
     storage: cmsSettingsStorage,
-    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 },
+    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT },
     fileFilter: cmsFileFilter
 }).single('file');
 
 const uploadCmsQr = multer({
     storage: cmsQrStorage,
-    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880 },
+    limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT },
     fileFilter: cmsFileFilter
 }).single('file');
 
@@ -109,9 +123,12 @@ const uploadCmsQr = multer({
 const handleUploadError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
+            const maxBytes = parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT;
+            const maxMB = Math.round(maxBytes / 1024 / 1024);
+            const maxLabel = maxMB >= 1024 ? `${(maxMB / 1024).toFixed(1)}GB` : `${maxMB}MB`;
             return res.status(400).json({
                 success: false,
-                message: `ไฟล์ใหญ่เกินไป อนุญาตสูงสุด ${process.env.MAX_FILE_SIZE / 1024 / 1024}MB`
+                message: `ไฟล์ใหญ่เกินไป อนุญาตสูงสุด ${maxLabel}`
             });
         }
         return res.status(400).json({
@@ -134,5 +151,6 @@ module.exports = {
     uploadSlip,
     uploadCmsSettings,
     uploadCmsQr,
-    handleUploadError
+    handleUploadError,
+    getCustomerUploadDir
 };

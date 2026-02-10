@@ -49,9 +49,35 @@ const rateLimitOTPVerify = rateLimit({
     legacyHeaders: false
 });
 
+/**
+ * Rate limiter สำหรับเลือกแพ็กเกจ/สร้างรายการชำระ (ลด abuse)
+ * จำกัด 30 ครั้ง / 1 นาที ต่อ IP (choose-package, create-pending-payment, validate-coupon)
+ */
+const rateLimitPayment = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 30,
+    message: { success: false, message: 'ดำเนินการบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+/**
+ * Rate limiter สำหรับช่องทางการชำระเงิน (GET/POST/PUT/DELETE payment-channels)
+ * จำกัด 20 ครั้ง / 1 นาที ต่อ IP
+ */
+const rateLimitPaymentChannels = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 20,
+    message: { success: false, message: 'ดำเนินการบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
 module.exports = {
     rateLimitLogin,
     rateLimitCreateCard,
     rateLimitOTPRequest,
-    rateLimitOTPVerify
+    rateLimitOTPVerify,
+    rateLimitPayment,
+    rateLimitPaymentChannels
 };

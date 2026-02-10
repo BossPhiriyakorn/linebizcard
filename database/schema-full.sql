@@ -2,6 +2,9 @@
 -- สคริปต์เดียวสร้างทุกตารางและทุกคอลัมน์ (รวม updated_at สำหรับการ์ด)
 -- รันผ่าน: node scripts/setup-database.js (จะโหลดไฟล์นี้)
 -- หรือรัน SQL เอง: psql -U user -d dbname -f database/schema-full.sql
+--
+-- การรันบนเซิร์ฟเวอร์: รันได้ตรงๆ (idempotent — ใช้ IF NOT EXISTS / ON CONFLICT)
+-- ถ้าต้องการสร้าง DB ใหม่ทั้งก้อน: รัน drop-tables.sql ก่อน แล้วค่อยรันไฟล์นี้
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -14,10 +17,10 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    phone VARCHAR(50),
-    nickname VARCHAR(100),
+    first_name TEXT,
+    last_name TEXT,
+    phone TEXT,
+    nickname TEXT,
     is_profile_complete BOOLEAN DEFAULT FALSE,
     line_user_id VARCHAR(100) UNIQUE,
     login_type VARCHAR(20) DEFAULT 'email',
@@ -89,9 +92,9 @@ CREATE TABLE IF NOT EXISTS user_cards (
     user_id INTEGER NOT NULL,
     template_id INTEGER NOT NULL,
     json_file_name VARCHAR(255) NOT NULL,
-    user_name VARCHAR(255),
-    user_phone VARCHAR(50),
-    user_email VARCHAR(255),
+    user_name TEXT,
+    user_phone TEXT,
+    user_email TEXT,
     user_image VARCHAR(255),
     flex_message_json TEXT NOT NULL,
     liff_url VARCHAR(500) NOT NULL,
@@ -115,15 +118,17 @@ CREATE INDEX IF NOT EXISTS idx_user_cards_unique_id ON user_cards(unique_id);
 -- -----------------------------------------------------------------------------
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_profile_complete BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS line_user_id VARCHAR(100);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS login_type VARCHAR(20) DEFAULT 'email';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS messaging_api_user_id VARCHAR(100);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(500);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_privacy_policy_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms_at TIMESTAMP;
 
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS user_description TEXT;
@@ -184,6 +189,9 @@ CREATE TABLE IF NOT EXISTS admins (
 
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}';
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);
 
 CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
 CREATE INDEX IF NOT EXISTS idx_admins_is_active ON admins(is_active);
@@ -209,10 +217,10 @@ END $$;
 CREATE TABLE IF NOT EXISTS login_logs (
     id SERIAL PRIMARY KEY,
     admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
-    username VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
     login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ip_address VARCHAR(100)
+    ip_address TEXT
 );
 
 -- กรณีตาราง login_logs มีอยู่แล้ว (จาก schema เก่า) ให้เพิ่ม admin_id
@@ -262,7 +270,7 @@ CREATE TABLE IF NOT EXISTS email_verifications (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     email VARCHAR(255) NOT NULL,
-    otp_code VARCHAR(6) NOT NULL,
+    otp_code VARCHAR(64) NOT NULL,
     expires_at TIMESTAMP NOT NULL,
     verified_at TIMESTAMP,
     attempts INTEGER DEFAULT 0,
@@ -392,6 +400,9 @@ CREATE TABLE IF NOT EXISTS payment_channels (
 );
 CREATE INDEX IF NOT EXISTS idx_payment_channels_user_id ON payment_channels(user_id);
 CREATE INDEX IF NOT EXISTS idx_payment_channels_is_default ON payment_channels(user_id, is_default) WHERE is_default = true;
+-- Stripe (สำหรับช่องทางบัตร)
+ALTER TABLE payment_channels ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255);
+ALTER TABLE payment_channels ADD COLUMN IF NOT EXISTS stripe_payment_method_id VARCHAR(255);
 
 -- -----------------------------------------------------------------------------
 -- ตาราง pending_payments (ชำระแบบ QR แนบสลิป รอแอดมินตรวจสอบ)
@@ -420,17 +431,25 @@ CREATE INDEX IF NOT EXISTS idx_pending_payments_status ON pending_payments(statu
 CREATE INDEX IF NOT EXISTS idx_pending_payments_created_at ON pending_payments(created_at DESC);
 
 ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_bank_name VARCHAR(255);
-ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_account_no VARCHAR(100);
-ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_account_name VARCHAR(255);
+ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_account_no TEXT;
+ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_account_name TEXT;
 ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_qr_image_url TEXT;
+ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS privacy_policy_content TEXT;
+ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS terms_of_service_content TEXT;
 
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS original_amount DECIMAL(10,2);
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS coupon_id INTEGER REFERENCES coupons(id) ON DELETE SET NULL;
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS extra_days INTEGER;
+-- LINE Pay (รอเชื่อมต่อ API)
+ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS line_pay_order_id VARCHAR(255);
+ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS line_pay_transaction_id VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_pending_payments_line_pay_order_id ON pending_payments(line_pay_order_id) WHERE line_pay_order_id IS NOT NULL;
 ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS original_amount DECIMAL(10,2);
 ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
 ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS extra_days INTEGER;
+-- Stripe PaymentIntent id / gateway transaction id (สำหรับตรวจสอบและ refund)
+ALTER TABLE payment_history ADD COLUMN IF NOT EXISTS transaction_id VARCHAR(255);
 
 -- cms_notifications: คอลัมน์อ้างอิง pending_payments (ต้องสร้างหลัง pending_payments)
 ALTER TABLE cms_notifications ADD COLUMN IF NOT EXISTS related_pending_payment_id INTEGER REFERENCES pending_payments(id) ON DELETE SET NULL;
@@ -457,3 +476,22 @@ INSERT INTO admins (username, email, password) VALUES
     '$2b$10$K0SGysDWlKaF6oG7kLYfCuVw77t/Ng/nb9i8g.pBHWu6xjmql9v3.'
 )
 ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, password = EXCLUDED.password;
+
+-- -----------------------------------------------------------------------------
+-- PII / OTP: ประเภทคอลัมน์สำหรับการเข้ารหัส (สร้างครั้งเดียวหรืออัปเกรดจาก schema เก่า)
+-- OTP เก็บแฮช SHA-256 (64 ตัวอักษร); PII เก็บ ciphertext AES-256 (ใช้ TEXT)
+-- -----------------------------------------------------------------------------
+ALTER TABLE email_verifications ALTER COLUMN otp_code TYPE VARCHAR(64);
+ALTER TABLE users ALTER COLUMN first_name TYPE TEXT;
+ALTER TABLE users ALTER COLUMN last_name TYPE TEXT;
+ALTER TABLE users ALTER COLUMN nickname TYPE TEXT;
+ALTER TABLE users ALTER COLUMN phone TYPE TEXT;
+ALTER TABLE user_cards ALTER COLUMN user_name TYPE TEXT;
+ALTER TABLE user_cards ALTER COLUMN user_phone TYPE TEXT;
+ALTER TABLE user_cards ALTER COLUMN user_email TYPE TEXT;
+ALTER TABLE user_cards ALTER COLUMN user_description TYPE TEXT;
+ALTER TABLE login_logs ALTER COLUMN username TYPE TEXT;
+ALTER TABLE login_logs ALTER COLUMN email TYPE TEXT;
+ALTER TABLE login_logs ALTER COLUMN ip_address TYPE TEXT;
+ALTER TABLE cms_settings ALTER COLUMN qr_payment_account_no TYPE TEXT;
+ALTER TABLE cms_settings ALTER COLUMN qr_payment_account_name TYPE TEXT;

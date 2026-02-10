@@ -17,10 +17,11 @@
 
 - **Backend**: Node.js + Express
 - **Database**: PostgreSQL
-- **Frontend**: HTML, CSS, JavaScript (Vanilla)
+- **Frontend**: Next.js (React)
 - **File Upload**: Multer
 - **Authentication**: JWT
 - **LIFF SDK**: Line Frontend Framework v2
+- **ชำระเงิน**: Stripe (บัตรเครดิต/เดบิต), ชำระแบบ QR + แนบสลิป, LINE Pay (เตรียมโครงไว้)
 
 ## 📋 ความต้องการของระบบ
 
@@ -50,16 +51,16 @@ npm install
 CREATE DATABASE line_flex_db;
 ```
 
-รัน SQL schema:
+รัน SQL schema (ดูลำดับการรันใน `database/README.md` ถ้ามี):
 
 ```bash
-psql -U postgres -d line_flex_db -f database/schema.sql
+psql -U postgres -d line_flex_db -f database/schema-full.sql
 ```
 
 หรือใช้ psql command line:
 
 ```bash
-psql -U postgres -d line_flex_db < database/schema.sql
+psql -U postgres -d line_flex_db < database/schema-full.sql
 ```
 
 ### 4. ตั้งค่า Environment Variables
@@ -70,33 +71,9 @@ psql -U postgres -d line_flex_db < database/schema.sql
 cp .env.example .env
 ```
 
-แก้ไขไฟล์ `.env`:
-
-```env
-# Server
-PORT=3000
-NODE_ENV=development
-BASE_URL=http://localhost:3000
-
-# LIFF Configuration
-LIFF_ID=2006438841-7A2RNRKG
-
-# PostgreSQL Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=line_flex_db
-DB_USER=postgres
-DB_PASSWORD=Boss112234
-
-# File Upload
-UPLOAD_DIR=uploads/images
-MAX_FILE_SIZE=5242880
-ALLOWED_FILE_TYPES=jpg,jpeg,png,gif
-
-# Session/JWT
-JWT_SECRET=line-flex-builder-secret-key-2024
-SESSION_SECRET=line-flex-builder-session-secret-2024
-```
+แก้ไขไฟล์ `.env` ตามสภาพแวดล้อม (ดูรายการตัวแปรทั้งหมดใน `.env.example`)  
+ตัวแปรหลัก: `PORT`, `BASE_URL`, `DB_*`, `JWT_SECRET`, `LIFF_ID`, `LIFF_LOGIN_ID`  
+สำหรับชำระเงินและ LINE Pay ดูใน `docs/PAYMENT_GATEWAY_SETUP.md` และ `docs/LINE_PAY_SETUP.md`
 
 ### 5. สร้างโฟลเดอร์ที่จำเป็น
 
@@ -109,74 +86,46 @@ mkdir -p json
 
 ### 6. รัน Server
 
-Development mode (ใช้ nodemon):
+Backend (Express):
 
 ```bash
 npm run dev
 ```
 
-Production mode:
+หรือ Production: `npm start`
+
+Frontend (Next.js) — แยกโฟลเดอร์ `frontend/`:
 
 ```bash
-npm start
+cd frontend && npm install && npm run dev
 ```
 
-Server จะรันที่ `http://localhost:3000`
+Server หลักจะรันที่ `http://localhost:3000` (ปรับตาม `PORT` และ `BASE_URL` ใน `.env`)
 
-## 📁 โครงสร้างโปรเจกต์
+## 📁 โครงสร้างโปรเจกต์ (สรุป)
 
 ```
-line-flex-builder/
-├── .env                    # Environment variables
-├── .env.example            # ตัวอย่าง config
-├── .gitignore
-├── package.json
-├── README.md
-├── server.js               # Main server
-├── config/
-│   └── database.js         # PostgreSQL connection pool
-├── routes/
-│   ├── index.js            # หน้าแรก
-│   ├── api.js              # API endpoints
-│   ├── auth.js             # Authentication routes
-│   └── share.js            # LIFF share page
-├── controllers/
-│   ├── authController.js   # Login/Register logic
-│   ├── cardController.js   # Card creation logic
-│   └── templateController.js
-├── middleware/
-│   ├── upload.js           # File upload (multer)
-│   └── auth.js             # Authentication middleware
-├── utils/
-│   ├── templateEngine.js   # Template processing
-│   └── uniqueId.js         # Generate unique ID
-├── database/
-│   └── schema.sql          # Database schema
-├── json/                   # Generated JSON files
-│   └── card_*.json
-├── uploads/
-│   └── images/
-└── public/
-    ├── register.html       # หน้าลงทะเบียน
-    ├── login.html          # หน้าเข้าสู่ระบบ
-    ├── create.html         # หน้าสร้างการ์ด
-    ├── my-cards.html       # หน้าดูลิงค์ทั้งหมด
-    ├── share.html          # หน้า LIFF (ส่ง Flex Message)
-    └── css/
-        └── style.css
+├── .env.example            # ตัวอย่างตัวแปรแวดล้อม (อ้างอิง docs/)
+├── server.js               # Backend (Express)
+├── config/                 # DB, Stripe, LINE Pay
+├── routes/                 # api.js, auth.js, cmsApi.js
+├── controllers/            # แพ็กเกจ, การ์ด, ชำระเงิน, CMS ฯลฯ
+├── services/               # paymentGatewayService, linePayService, lineService
+├── middleware/             # auth, upload, rateLimit
+├── database/               # schema-full.sql, migration ต่างๆ (ดู database/README.md)
+├── docs/                   # PAYMENT_GATEWAY_SETUP.md, LINE_PAY_SETUP.md
+├── frontend/               # Next.js (React) — หน้า LIFF, CMS, ชำระเงิน, โปรไฟล์
+│   └── app/                # หน้า /home, /create, /payment-summary, /pay-by-qr, /cms ฯลฯ
+└── uploads/images/         # รูปอัปโหลด
 ```
 
 ## 🔌 API Endpoints
 
-### Authentication
+### Authentication (ลูกค้าเข้าใช้งานผ่าน LINE)
 
-- `POST /api/register` - ลงทะเบียน
-  - Body: `{ username, email, password }`
-  
-- `POST /api/login` - เข้าสู่ระบบ
-  - Body: `{ email/username, password }`
-  
-- `POST /api/logout` - ออกจากระบบ
+- ลูกค้าเข้าสู่ระบบผ่าน LINE (LIFF) — ใช้ `GET /api/auth/line/login`, callback แล้วได้ token
+- `POST /api/auth/logout` - ออกจากระบบ (ตอบรับ; JWT ลบฝั่ง client)
+- `POST /api/auth/line/liff-login` - LIFF login (line_user_id, display_name)
 
 ### Templates
 
@@ -202,10 +151,10 @@ line-flex-builder/
 
 ## 🎯 วิธีใช้งาน
 
-### 1. ลงทะเบียน/เข้าสู่ระบบ
+### 1. ลงทะเบียน/เข้าสู่ระบบ (ผ่าน LINE)
 
-- ไปที่ `http://localhost:3000/register` เพื่อลงทะเบียน
-- หรือ `http://localhost:3000/login` เพื่อเข้าสู่ระบบ
+- ลูกค้าเข้าใช้งานผ่าน LINE — เปิด LIFF หรือไปที่ `/liff/login` เพื่อเข้าสู่ระบบด้วย LINE
+- ลิงก์ `/login` และ `/register` จะ redirect ไปหน้า LIFF login อัตโนมัติ
 
 ### 2. สร้างการ์ด
 
@@ -229,7 +178,7 @@ line-flex-builder/
 
 ## 🔒 Security
 
-- Password hashing ด้วย bcrypt
+- Password hashing ด้วย bcrypt (แอดมิน CMS; ลูกค้าเข้าใช้งานผ่าน LINE ไม่ใช้รหัสผ่าน)
 - JWT authentication
 - Input validation
 - File upload validation

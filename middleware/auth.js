@@ -2,8 +2,18 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 require('dotenv').config();
 
+/** Secret สำหรับลูกค้า (LINE/LIFF) — ใช้กับ API ลูกค้าเท่านั้น */
+function getCustomerSecret() {
+    return process.env.JWT_SECRET || '';
+}
+
+/** Secret สำหรับแอดมิน (CMS) — แยกจากลูกค้าเพื่อความปลอดภัย */
+function getCmsSecret() {
+    return process.env.JWT_SECRET_CMS || process.env.JWT_SECRET || '';
+}
+
 /**
- * Middleware สำหรับตรวจสอบ JWT token
+ * Middleware สำหรับตรวจสอบ JWT token (ลูกค้า) — ใช้ JWT_SECRET
  */
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -16,7 +26,44 @@ function authenticateToken(req, res, next) {
         });
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    const secret = getCustomerSecret();
+    if (!secret) {
+        return res.status(500).json({ success: false, message: 'ระบบยังไม่ได้ตั้งค่า JWT_SECRET' });
+    }
+
+    jwt.verify(token, secret, (err, user) => {
+        if (err) {
+            return res.status(403).json({
+                success: false,
+                message: 'Token ไม่ถูกต้องหรือหมดอายุ'
+            });
+        }
+        req.user = user;
+        next();
+    });
+}
+
+/**
+ * Middleware สำหรับตรวจสอบ JWT token (แอดมิน CMS) — ใช้ JWT_SECRET_CMS แยกจากลูกค้า
+ * ต้องใช้กับ route /api/cms/* ที่ต้อง login แอดมิน
+ */
+function authenticateCmsToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: 'กรุณาเข้าสู่ระบบ CMS'
+        });
+    }
+
+    const secret = getCmsSecret();
+    if (!secret) {
+        return res.status(500).json({ success: false, message: 'ระบบยังไม่ได้ตั้งค่า JWT (CMS)' });
+    }
+
+    jwt.verify(token, secret, (err, user) => {
         if (err) {
             return res.status(403).json({
                 success: false,
@@ -87,21 +134,40 @@ async function requireActiveMembership(req, res, next) {
 }
 
 /**
- * สร้าง JWT token
+ * สร้าง JWT token สำหรับลูกค้า (LINE/LIFF) — ใช้ JWT_SECRET
  * @param {Object} user - User object { id, username, email }
  * @returns {string} JWT token
  */
 function generateToken(user) {
+    const secret = getCustomerSecret();
+    if (!secret) throw new Error('JWT_SECRET is not set');
     return jwt.sign(
         { id: user.id, username: user.username, email: user.email },
-        process.env.JWT_SECRET,
+        secret,
+        { expiresIn: '7d' }
+    );
+}
+
+/**
+ * สร้าง JWT token สำหรับแอดมิน (CMS) — ใช้ JWT_SECRET_CMS แยกจากลูกค้า
+ * @param {Object} admin - Admin object { id, username, email }
+ * @returns {string} JWT token
+ */
+function generateCmsToken(admin) {
+    const secret = getCmsSecret();
+    if (!secret) throw new Error('JWT_SECRET_CMS or JWT_SECRET is not set');
+    return jwt.sign(
+        { id: admin.id, username: admin.username, email: admin.email },
+        secret,
         { expiresIn: '7d' }
     );
 }
 
 module.exports = {
     authenticateToken,
+    authenticateCmsToken,
     requireActiveUser,
     requireActiveMembership,
-    generateToken
+    generateToken,
+    generateCmsToken
 };

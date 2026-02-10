@@ -3,15 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
-
-function getToken() {
-  return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-}
-
-function getHeaders() {
-  const t = getToken();
-  return t ? { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' } : {};
-}
+import { getToken, getHeaders as getAuthHeaders, handleAuthResponse } from '../utils/auth';
 
 export default function ChoosePackagePage() {
   const router = useRouter();
@@ -19,24 +11,56 @@ export default function ChoosePackagePage() {
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
   const [submittingId, setSubmittingId] = useState(null);
+  const [paymentChannels, setPaymentChannels] = useState([]);
+  const [loadingChannels, setLoadingChannels] = useState(true);
 
   useEffect(() => {
     if (!getToken()) {
-      router.replace('/');
+      router.replace('/liff/login');
       return;
     }
     fetch('/api/packages')
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((res) => {
         setLoading(false);
+        if (res == null) return;
         if (res.success && Array.isArray(res.data)) setPackages(res.data);
         else setAlert({ show: true, msg: res?.message || 'โหลดแพ็กเกจไม่สำเร็จ', type: 'error' });
       })
       .catch(() => setLoading(false));
+
+    fetch('/api/payment-channels', { headers: getAuthHeaders() })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then((res) => {
+        setLoadingChannels(false);
+        if (res != null && res.success && Array.isArray(res.data)) setPaymentChannels(res.data);
+      })
+      .catch(() => setLoadingChannels(false));
   }, [router]);
 
-  const goToSummary = (packageId) => {
-    router.push('/payment-summary?package_id=' + packageId);
+  const goToSummary = (pkg) => {
+    // ตรวจสอบว่าแพ็กเกจต้องชำระเงินหรือไม่
+    if (pkg.requires_payment === true || (pkg.price != null && Number(pkg.price) > 0)) {
+      // ตรวจสอบว่ามีช่องทางการชำระเงินหรือไม่
+      if (loadingChannels) {
+        setAlert({ show: true, msg: 'กำลังตรวจสอบช่องทางการชำระเงิน...', type: 'error' });
+        return;
+      }
+      if (!paymentChannels || paymentChannels.length === 0) {
+        // ยังไม่มีช่องทางการชำระเงิน ให้ไปที่หน้าโปรไฟล์เพื่อลงทะเบียน
+        setAlert({ 
+          show: true, 
+          msg: 'กรุณาลงทะเบียนช่องทางการชำระเงินก่อนเลือกแพ็กเกจที่ต้องชำระเงิน', 
+          type: 'error' 
+        });
+        setTimeout(() => {
+          router.push('/profile?register_payment=true&package_id=' + pkg.id);
+        }, 2000);
+        return;
+      }
+    }
+    // ถ้ามีช่องทางการชำระเงินแล้ว หรือแพ็กเกจฟรี ให้ไปหน้าสรุปการชำระ
+    router.push('/payment-summary?package_id=' + pkg.id);
   };
 
   const usePackageDirect = (pkg) => {
@@ -44,11 +68,12 @@ export default function ChoosePackagePage() {
     setAlert({ show: false, msg: '', type: 'success' });
     fetch('/api/choose-package', {
       method: 'POST',
-      headers: getHeaders(),
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ package_id: pkg.id }),
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         setSubmittingId(null);
         if (data.success) {
           setAlert({ show: true, msg: data.message || 'เลือกแพ็กเกจสำเร็จ', type: 'success' });
@@ -116,7 +141,7 @@ export default function ChoosePackagePage() {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => goToSummary(pkg.id)}
+                    onClick={() => goToSummary(pkg)}
                     className="mt-4 w-full rounded-lg bg-[#1DB446] py-3 font-semibold text-white hover:bg-[#0FA03A]"
                   >
                     เลือก

@@ -5,10 +5,10 @@ import { getCmsHeaders, handleCmsResponse } from './cmsApi';
 import Link from 'next/link';
 
 const cardConfig = [
-  { key: 'templates_count', label: 'จำนวนแทมเพลต', icon: '📄', path: '/cms/templates' },
-  { key: 'users_count', label: 'จำนวนผู้ใช้งาน', icon: '👥', path: '/cms/users' },
-  { key: 'cards_count', label: 'จำนวนการ์ดที่สร้าง', icon: '🃏', path: '/cms' },
-  { key: 'notifications_count', label: 'จำนวนการแจ้งเตือน', icon: '🔔', path: '/cms/login-history' },
+  { key: 'templates_count', label: 'จำนวนแทมเพลต', icon: '📄' },
+  { key: 'users_count', label: 'จำนวนผู้ใช้งาน', icon: '👥' },
+  { key: 'cards_count', label: 'จำนวนการ์ดที่สร้าง', icon: '🃏' },
+  { key: 'notifications_count', label: 'จำนวนการแจ้งเตือน', icon: '🔔' },
 ];
 
 const glassCard = {
@@ -18,23 +18,22 @@ const glassCard = {
   border: '1px solid rgba(255,255,255,0.8)',
 };
 
-function StatCard({ icon, value, label, path }) {
+function StatCard({ icon, value, label }) {
   return (
-    <Link
-      href={path}
-      className="group relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl md:p-6"
+    <div
+      className="relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md md:p-6"
       style={glassCard}
     >
       <div className="mb-3 flex items-center justify-between">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-2xl transition-transform duration-200 group-hover:scale-110">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-2xl">
           {icon}
         </span>
       </div>
-      <div className="text-2xl font-bold text-violet-700 transition-colors group-hover:text-violet-800 md:text-3xl">
+      <div className="text-2xl font-bold text-violet-700 md:text-3xl">
         {value}
       </div>
       <div className="mt-1 text-sm text-slate-500">{label}</div>
-    </Link>
+    </div>
   );
 }
 
@@ -258,8 +257,8 @@ export default function DashboardPage() {
       {!loading && (
         <>
           <div className="cms-dashboard-grid">
-            {cardConfig.map(({ key, label, icon, path }) => (
-              <StatCard key={key} icon={icon} value={stats[key]} label={label} path={path} />
+            {cardConfig.map(({ key, label, icon }) => (
+              <StatCard key={key} icon={icon} value={stats[key]} label={label} />
             ))}
           </div>
 

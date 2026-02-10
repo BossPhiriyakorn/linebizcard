@@ -1,9 +1,10 @@
 const path = require('path');
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
-const { generateToken } = require('../middleware/auth');
+const { generateCmsToken } = require('../middleware/auth');
 const { addCmsNotification } = require('../utils/cmsNotification');
 const { convertToWebp } = require('../utils/imageToWebp');
+const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
 
 /**
  * CMS Login: อีเมล + รหัสผ่าน — ตรวจจากตาราง admins
@@ -43,12 +44,16 @@ async function cmsLogin(req, res) {
         }
         const ip = (req.headers['x-forwarded-for'] && req.headers['x-forwarded-for'].split(',')[0].trim()) || req.ip || req.socket?.remoteAddress || null;
         try {
-            await pool.query(
+            const logResult = await pool.query(
                 'INSERT INTO login_logs (admin_id, username, email, ip_address) VALUES ($1, $2, $3, $4)',
-                [admin.id, admin.username, admin.email, ip]
+                [admin.id, encrypt(admin.username), encrypt(admin.email), ip ? encrypt(ip) : null]
             );
+            if (logResult.rowCount > 0) {
+                console.log('[cmsLogin] Login log recorded for admin_id=' + admin.id);
+            }
         } catch (logErr) {
-            console.error('Login log insert error:', logErr.message);
+            console.error('[cmsLogin] Login log insert error:', logErr.message, 'Code:', logErr.code);
+            // ไม่ throw error เพื่อไม่ให้กระทบการล็อกอิน แต่ log ให้เห็นชัดเจน
         }
         addCmsNotification(pool, {
             notification_type: 'admin_login',
@@ -57,14 +62,14 @@ async function cmsLogin(req, res) {
             link_url: '/cms/login-history',
             related_admin_id: admin.id
         }).catch(() => {});
-        const token = generateToken({ id: admin.id, username: admin.username, email: admin.email });
+        const token = generateCmsToken({ id: admin.id, username: admin.username, email: admin.email });
         res.json({
             success: true,
             token: token,
             user: { id: admin.id, username: admin.username, email: admin.email }
         });
     } catch (err) {
-        console.error('CMS login error:', err);
+        console.error('CMS login error:', err.message || err);
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ'
@@ -318,20 +323,80 @@ async function toggleTemplate(req, res) {
 }
 
 /**
- * รายการผู้ใช้ (ลูกค้า) สำหรับ CMS — จากตาราง users เท่านั้น
+ * ลบแทมเพลตออกจากฐานข้อมูล — ต้องปิดใช้งานการ์ดก่อนจึงจะลบได้
+ */
+async function deleteTemplate(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const check = await pool.query('SELECT id, COALESCE(is_active, true) AS is_active FROM templates WHERE id = $1', [id]);
+        if (check.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแทมเพลต' });
+        }
+        if (check.rows[0].is_active === true) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณาปิดใช้งานการ์ดก่อนจึงจะลบได้'
+            });
+        }
+        await pool.query('DELETE FROM templates WHERE id = $1', [id]);
+        res.json({ success: true, message: 'ลบแทมเพลตแล้ว' });
+    } catch (err) {
+        console.error('CMS delete template error:', err);
+        res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' });
+    }
+}
+
+/**
+ * รายการผู้ใช้ (ลูกค้า) สำหรับ CMS — จากตาราง users + จำนวนรายการรอตรวจสอบยอด (สลิป)
+ * ถ้ามี pending_payments สถานะ slip_uploaded จะแสดงสถานะ "ตรวจสอบยอด" ในหน้าจัดการผู้ใช้
  */
 async function getUsers(req, res) {
     try {
         const result = await pool.query(
-            `SELECT id, username, email, first_name, last_name, phone, login_type, 
-             COALESCE(is_active, true) AS is_active, COALESCE(email_verified, false) AS email_verified, created_at 
-             FROM users ORDER BY id ASC`
+            `SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.phone, u.login_type, 
+             COALESCE(u.is_active, true) AS is_active, COALESCE(u.email_verified, false) AS email_verified, u.created_at,
+             (SELECT COUNT(*) FROM pending_payments pp WHERE pp.user_id = u.id AND pp.status = 'slip_uploaded') AS pending_slip_count
+             FROM users u ORDER BY u.id ASC`
         );
-        const rows = Array.isArray(result.rows) ? result.rows : [];
+        const rows = (Array.isArray(result.rows) ? result.rows : []).map((r) => ({
+            ...r,
+            first_name: decryptIfEncrypted(r.first_name),
+            last_name: decryptIfEncrypted(r.last_name),
+            phone: decryptIfEncrypted(r.phone),
+            nickname: decryptIfEncrypted(r.nickname)
+        }));
         res.json({ success: true, data: rows });
     } catch (err) {
         console.error('CMS get users error:', err);
         res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
+    }
+}
+
+/**
+ * สถิติสำหรับหน้าจัดการผู้ใช้: จำนวนผู้ใช้ทั้งหมด, ยืนยันตัวตนแล้ว, รอตรวจสอบยอดโอน (สลิป)
+ */
+async function getUsersStats(req, res) {
+    try {
+        const totalResult = await pool.query('SELECT COUNT(*) AS c FROM users');
+        const verifiedResult = await pool.query('SELECT COUNT(*) AS c FROM users WHERE email_verified = true');
+        const pendingResult = await pool.query(
+            "SELECT COUNT(*) AS c FROM pending_payments WHERE status = 'slip_uploaded'"
+        );
+        const suspendedResult = await pool.query("SELECT COUNT(*) AS c FROM users WHERE is_active = false");
+        const total_users = parseInt(totalResult.rows[0]?.c ?? 0, 10);
+        const verified_users = parseInt(verifiedResult.rows[0]?.c ?? 0, 10);
+        const pending_transfer_count = parseInt(pendingResult.rows[0]?.c ?? 0, 10);
+        const suspended_users = parseInt(suspendedResult.rows[0]?.c ?? 0, 10);
+        res.json({
+            success: true,
+            data: { total_users, verified_users, pending_transfer_count, suspended_users }
+        });
+    } catch (err) {
+        console.error('CMS getUsersStats error:', err);
+        res.status(500).json({ success: false, message: 'โหลดสถิติไม่สำเร็จ' });
     }
 }
 
@@ -357,7 +422,14 @@ async function getUserById(req, res) {
         if (userResult.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
         }
-        const user = userResult.rows[0];
+        const rawUser = userResult.rows[0];
+        const user = {
+            ...rawUser,
+            first_name: decryptIfEncrypted(rawUser.first_name),
+            last_name: decryptIfEncrypted(rawUser.last_name),
+            phone: decryptIfEncrypted(rawUser.phone),
+            nickname: decryptIfEncrypted(rawUser.nickname)
+        };
 
         let membership = null;
         try {
@@ -386,7 +458,10 @@ async function getUserById(req, res) {
                  WHERE uc.user_id = $1 ORDER BY uc.created_at DESC`,
                 [userId]
             );
-            cards = Array.isArray(cardsResult.rows) ? cardsResult.rows : [];
+            cards = (Array.isArray(cardsResult.rows) ? cardsResult.rows : []).map((c) => ({
+                ...c,
+                user_name: decryptIfEncrypted(c.user_name)
+            }));
         } catch (e) {
             console.error('CMS getUserById cards error:', e.message);
         }
@@ -676,12 +751,12 @@ async function updateUserMembership(req, res) {
 }
 
 /**
- * รายการแอดมิน — จากตาราง admins
+ * รายการแอดมิน — จากตาราง admins (รวม permissions)
  */
 async function getAdmins(req, res) {
     try {
         const result = await pool.query(
-            `SELECT id, username, email, COALESCE(is_active, true) AS is_active, created_at 
+            `SELECT id, username, email, full_name, nickname, COALESCE(is_active, true) AS is_active, created_at, permissions 
              FROM admins ORDER BY id ASC`
         );
         const rows = Array.isArray(result.rows) ? result.rows : [];
@@ -693,11 +768,37 @@ async function getAdmins(req, res) {
 }
 
 /**
- * สร้างแอดมินใหม่ (username, email, password)
+ * ดึงข้อมูลแอดมินที่ล็อกอินอยู่ (สำหรับแสดงสิทธิ์/ซ่อนปุ่มลบตัวเอง)
+ */
+async function getCmsMe(req, res) {
+    try {
+        const admin = req.adminUser;
+        if (!admin) {
+            return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' });
+        }
+        res.json({
+            success: true,
+            data: {
+                id: admin.id,
+                username: admin.username,
+                email: admin.email,
+                full_name: admin.full_name,
+                nickname: admin.nickname,
+                permissions: admin.permissions || {}
+            }
+        });
+    } catch (err) {
+        console.error('CMS get me error:', err);
+        res.status(500).json({ success: false, message: 'โหลดข้อมูลไม่สำเร็จ' });
+    }
+}
+
+/**
+ * สร้างแอดมินใหม่ (username, email, password, permissions)
  */
 async function createAdmin(req, res) {
     try {
-        const { username, email, password } = req.body || {};
+        const { username, email, password, permissions, full_name, nickname } = req.body || {};
         if (!username || !email || !password) {
             return res.status(400).json({
                 success: false,
@@ -706,6 +807,8 @@ async function createAdmin(req, res) {
         }
         const un = username.trim();
         const em = email.trim();
+        const fullName = full_name != null ? String(full_name).trim() || null : null;
+        const nick = nickname != null ? String(nickname).trim() || null : null;
         if (password.length < 6) {
             return res.status(400).json({
                 success: false,
@@ -719,11 +822,18 @@ async function createAdmin(req, res) {
                 message: 'รูปแบบอีเมลไม่ถูกต้อง'
             });
         }
+        const perms = permissions && typeof permissions === 'object'
+            ? {
+                view_only: permissions.view_only === true,
+                can_delete_admins: permissions.can_delete_admins === true,
+                can_manage_users: permissions.can_manage_users === true
+            }
+            : { view_only: true, can_delete_admins: false, can_manage_users: false };
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await pool.query(
-            `INSERT INTO admins (username, email, password) VALUES ($1, $2, $3) 
-             RETURNING id, username, email, created_at`,
-            [un, em, hashedPassword]
+            `INSERT INTO admins (username, email, password, permissions, full_name, nickname) VALUES ($1, $2, $3, $4, $5, $6) 
+             RETURNING id, username, email, full_name, nickname, permissions, created_at`,
+            [un, em, hashedPassword, JSON.stringify(perms), fullName, nick]
         );
         res.status(201).json({
             success: true,
@@ -743,6 +853,94 @@ async function createAdmin(req, res) {
 }
 
 /**
+ * ลบแอดมิน (ต้องมีสิทธิ์ can_delete_admins และห้ามลบตัวเอง)
+ */
+async function deleteAdmin(req, res) {
+    try {
+        const adminId = req.adminUser?.id;
+        const targetId = parseInt(req.params.id, 10);
+        if (!targetId || Number.isNaN(targetId)) {
+            return res.status(400).json({ success: false, message: 'รหัสแอดมินไม่ถูกต้อง' });
+        }
+        if (targetId === adminId) {
+            return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีตัวเองได้' });
+        }
+        const result = await pool.query('DELETE FROM admins WHERE id = $1 RETURNING id', [targetId]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแอดมิน' });
+        }
+        res.json({ success: true, message: 'ลบแอดมินแล้ว' });
+    } catch (err) {
+        console.error('CMS delete admin error:', err);
+        res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' });
+    }
+}
+
+/**
+ * แก้ไขแอดมิน (ชื่อผู้ใช้, ชื่อจริง, ชื่อเล่น, สิทธิ์, สถานะ) — ต้องมีสิทธิ์ can_manage_users
+ */
+async function updateAdmin(req, res) {
+    try {
+        const targetId = parseInt(req.params.id, 10);
+        if (!targetId || Number.isNaN(targetId)) {
+            return res.status(400).json({ success: false, message: 'รหัสแอดมินไม่ถูกต้อง' });
+        }
+        const { username, full_name, nickname, permissions, is_active } = req.body || {};
+        const updates = [];
+        const values = [];
+        let idx = 1;
+        if (username !== undefined) {
+            updates.push(`username = $${idx}`);
+            values.push(String(username).trim());
+            idx++;
+        }
+        if (full_name !== undefined) {
+            updates.push(`full_name = $${idx}`);
+            values.push(full_name != null && String(full_name).trim() !== '' ? String(full_name).trim() : null);
+            idx++;
+        }
+        if (nickname !== undefined) {
+            updates.push(`nickname = $${idx}`);
+            values.push(nickname != null && String(nickname).trim() !== '' ? String(nickname).trim() : null);
+            idx++;
+        }
+        if (permissions !== undefined && permissions !== null && typeof permissions === 'object') {
+            updates.push(`permissions = $${idx}`);
+            values.push(JSON.stringify({
+                view_only: permissions.view_only === true,
+                can_delete_admins: permissions.can_delete_admins === true,
+                can_manage_users: permissions.can_manage_users === true
+            }));
+            idx++;
+        }
+        if (is_active !== undefined) {
+            updates.push(`is_active = $${idx}`);
+            values.push(!!is_active);
+            idx++;
+        }
+        if (updates.length === 0) {
+            return res.status(400).json({ success: false, message: 'ไม่มีข้อมูลที่จะแก้ไข' });
+        }
+        updates.push(`updated_at = CURRENT_TIMESTAMP`);
+        values.push(targetId);
+        const result = await pool.query(
+            `UPDATE admins SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, username, email, full_name, nickname, is_active, permissions, updated_at`,
+            values
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแอดมิน' });
+        }
+        res.json({ success: true, message: 'แก้ไขแอดมินแล้ว', data: result.rows[0] });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' });
+        }
+        console.error('CMS update admin error:', err);
+        res.status(500).json({ success: false, message: 'แก้ไขไม่สำเร็จ' });
+    }
+}
+
+/**
  * ประวัติการเข้าใช้งาน CMS (จาก login_logs)
  */
 async function getLoginHistory(req, res) {
@@ -751,10 +949,19 @@ async function getLoginHistory(req, res) {
             `SELECT id, admin_id, username, email, login_at, ip_address 
              FROM login_logs ORDER BY login_at DESC LIMIT 500`
         );
-        const rows = Array.isArray(result.rows) ? result.rows : [];
+        const rows = (Array.isArray(result.rows) ? result.rows : []).map((r) => ({
+            ...r,
+            username: decryptIfEncrypted(r.username),
+            email: decryptIfEncrypted(r.email),
+            ip_address: decryptIfEncrypted(r.ip_address)
+        }));
+        console.log(`[getLoginHistory] Found ${rows.length} login logs`);
+        if (rows.length === 0) {
+            console.warn('[getLoginHistory] No login logs found in database - table may be empty or no admin has logged in yet');
+        }
         res.json({ success: true, data: rows });
     } catch (err) {
-        console.error('CMS get login history error:', err);
+        console.error('[getLoginHistory] Error:', err.message, 'Code:', err.code);
         res.status(500).json({ success: false, message: 'โหลดประวัติไม่สำเร็จ' });
     }
 }
@@ -792,7 +999,8 @@ async function getSettings(req, res) {
     try {
         const result = await pool.query(
             `SELECT id, login_logo_url, login_bg_image_url, login_bg_color, updated_at,
-              qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url
+              qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url,
+              privacy_policy_content, terms_of_service_content
              FROM cms_settings WHERE id = 1 LIMIT 1`
         );
         const row = result.rows[0];
@@ -801,7 +1009,8 @@ async function getSettings(req, res) {
                 success: true,
                 data: {
                     login_logo_url: null, login_bg_image_url: null, login_bg_color: '#5b21b6', updated_at: null,
-                    qr_payment_bank_name: null, qr_payment_account_no: null, qr_payment_account_name: null, qr_payment_qr_image_url: null
+                    qr_payment_bank_name: null, qr_payment_account_no: null, qr_payment_account_name: null, qr_payment_qr_image_url: null,
+                    privacy_policy_content: null, terms_of_service_content: null
                 }
             });
         }
@@ -813,9 +1022,11 @@ async function getSettings(req, res) {
                 login_bg_color: row.login_bg_color || '#5b21b6',
                 updated_at: row.updated_at,
                 qr_payment_bank_name: row.qr_payment_bank_name || null,
-                qr_payment_account_no: row.qr_payment_account_no || null,
-                qr_payment_account_name: row.qr_payment_account_name || null,
+                qr_payment_account_no: decryptIfEncrypted(row.qr_payment_account_no) ?? row.qr_payment_account_no ?? null,
+                qr_payment_account_name: decryptIfEncrypted(row.qr_payment_account_name) ?? row.qr_payment_account_name ?? null,
                 qr_payment_qr_image_url: row.qr_payment_qr_image_url || null,
+                privacy_policy_content: row.privacy_policy_content ?? '',
+                terms_of_service_content: row.terms_of_service_content ?? ''
             }
         });
     } catch (err) {
@@ -829,7 +1040,7 @@ async function getSettings(req, res) {
  */
 async function updateSettings(req, res) {
     try {
-        const { login_logo_url, login_bg_image_url, login_bg_color, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url } = req.body || {};
+        const { login_logo_url, login_bg_image_url, login_bg_color, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content } = req.body || {};
         const logo = login_logo_url != null ? String(login_logo_url).trim() || null : null;
         const bgImage = login_bg_image_url != null ? String(login_bg_image_url).trim() || null : null;
         const bgColor = (login_bg_color != null && String(login_bg_color).trim()) ? String(login_bg_color).trim() : '#5b21b6';
@@ -837,9 +1048,11 @@ async function updateSettings(req, res) {
         const qrAccNo = qr_payment_account_no != null ? String(qr_payment_account_no).trim().slice(0, 100) || null : null;
         const qrAccName = qr_payment_account_name != null ? String(qr_payment_account_name).trim().slice(0, 255) || null : null;
         const qrImage = qr_payment_qr_image_url != null ? String(qr_payment_qr_image_url).trim() || null : null;
+        const privacyContent = privacy_policy_content != null ? String(privacy_policy_content).trim() || null : null;
+        const termsContent = terms_of_service_content != null ? String(terms_of_service_content).trim() || null : null;
         await pool.query(
-            `INSERT INTO cms_settings (id, login_logo_url, login_bg_image_url, login_bg_color, updated_at, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url)
-             VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP, $4, $5, $6, $7)
+            `INSERT INTO cms_settings (id, login_logo_url, login_bg_image_url, login_bg_color, updated_at, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content)
+             VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP, $4, $5, $6, $7, $8, $9)
              ON CONFLICT (id) DO UPDATE SET
                login_logo_url = EXCLUDED.login_logo_url,
                login_bg_image_url = EXCLUDED.login_bg_image_url,
@@ -848,8 +1061,10 @@ async function updateSettings(req, res) {
                qr_payment_bank_name = COALESCE(EXCLUDED.qr_payment_bank_name, cms_settings.qr_payment_bank_name),
                qr_payment_account_no = COALESCE(EXCLUDED.qr_payment_account_no, cms_settings.qr_payment_account_no),
                qr_payment_account_name = COALESCE(EXCLUDED.qr_payment_account_name, cms_settings.qr_payment_account_name),
-               qr_payment_qr_image_url = COALESCE(EXCLUDED.qr_payment_qr_image_url, cms_settings.qr_payment_qr_image_url)`,
-            [logo, bgImage, bgColor, qrBank, qrAccNo, qrAccName, qrImage]
+               qr_payment_qr_image_url = COALESCE(EXCLUDED.qr_payment_qr_image_url, cms_settings.qr_payment_qr_image_url),
+               privacy_policy_content = COALESCE(EXCLUDED.privacy_policy_content, cms_settings.privacy_policy_content),
+               terms_of_service_content = COALESCE(EXCLUDED.terms_of_service_content, cms_settings.terms_of_service_content)`,
+            [logo, bgImage, bgColor, qrBank, encrypt(qrAccNo), encrypt(qrAccName), qrImage, privacyContent, termsContent]
         );
         res.json({ success: true, message: 'บันทึกตั้งค่าแล้ว' });
     } catch (err) {
@@ -1143,7 +1358,9 @@ module.exports = {
     createTemplate,
     updateTemplate,
     toggleTemplate,
+    deleteTemplate,
     getUsers,
+    getUsersStats,
     getUserById,
     getUserPaymentChannels,
     getUserPendingPayments,
@@ -1154,6 +1371,9 @@ module.exports = {
     updateUserMembership,
     getAdmins,
     createAdmin,
+    updateAdmin,
+    deleteAdmin,
+    getCmsMe,
     getLoginHistory,
     getNotifications,
     getLoginSettings,

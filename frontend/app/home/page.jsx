@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse, clearTokenAndRedirectToLogin } from '../utils/auth';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -43,17 +43,17 @@ function HomeContent() {
   useEffect(() => {
     const t = getToken();
     if (!t) {
-      window.location.href = '/';
+      window.location.href = '/liff/login';
       return;
     }
     Promise.all([
-      fetch('/api/user/profile', { headers: getHeaders() }).then((r) => (r.status === 401 ? null : r.json())),
-      fetch('/api/my-cards', { headers: getHeaders() }).then((r) => (r.status === 401 ? null : r.json())),
+      fetch('/api/user/profile', { headers: getHeaders() }).then((r) => (handleAuthResponse(r) ? null : r.json())),
+      fetch('/api/my-cards', { headers: getHeaders() }).then((r) => (handleAuthResponse(r) ? null : r.json())),
     ])
       .then(([profileRes, cardsRes]) => {
         setLoading(false);
         if (profileRes?.success && profileRes.data) setProfile(profileRes.data);
-        if (profileRes === null || (profileRes && !profileRes.success)) window.location.href = '/';
+        if (profileRes === null || (profileRes && !profileRes.success)) clearTokenAndRedirectToLogin();
         if (cardsRes?.success && Array.isArray(cardsRes.data)) setCards(cardsRes.data);
       })
       .catch(() => setLoading(false));

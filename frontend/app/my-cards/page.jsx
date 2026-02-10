@@ -5,20 +5,13 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 const MY_CARDS_KEY = '/api/my-cards';
 
 async function fetcherMyCards(url) {
   const r = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
-  if (r.status === 401) {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/';
-    }
-    throw new Error('Unauthorized');
-  }
+  if (handleAuthResponse(r)) throw new Error('Unauthorized');
   const data = await r.json();
   if (!data?.success) throw new Error(data?.message || 'โหลดข้อมูลไม่สำเร็จ');
   return Array.isArray(data.data) ? data.data : [];
@@ -67,7 +60,7 @@ function MyCardsContent() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!token) {
-      window.location.href = '/';
+      window.location.href = '/liff/login';
       return;
     }
   }, [token]);
@@ -121,8 +114,9 @@ function MyCardsContent() {
   const deleteCard = (cardId) => {
     if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบการ์ดนี้?')) return;
     fetch('/api/cards/' + cardId, { method: 'DELETE', headers: getHeaders() })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         if (data.success) {
           setAlert({ show: true, msg: 'ลบการ์ดแล้ว', type: 'success' });
           mutate();

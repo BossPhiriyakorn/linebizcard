@@ -4,12 +4,38 @@ import { useEffect, useState } from 'react';
 import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
+const PERM_LABELS = {
+  view_only: 'ดูได้อย่างเดียว',
+  can_delete_admins: 'ลบแอดมินคนอื่นได้',
+  can_manage_users: 'จัดการผู้ใช้งานได้',
+};
+
+function formatPermissions(permissions) {
+  if (!permissions || typeof permissions !== 'object') return '-';
+  const active = Object.entries(permissions)
+    .filter(([, v]) => v === true)
+    .map(([k]) => PERM_LABELS[k] || k);
+  return active.length ? active.join(', ') : 'ดูได้อย่างเดียว';
+}
+
 export default function AdminsPage() {
   const [alert, showAlert] = useCmsAlert();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [me, setMe] = useState(null);
+  const [form, setForm] = useState({
+    username: '',
+    full_name: '',
+    nickname: '',
+    email: '',
+    password: '',
+    is_active: true,
+    view_only: true,
+    can_delete_admins: false,
+    can_manage_users: false,
+  });
 
   const load = () => {
     setLoading(true);
@@ -39,15 +65,77 @@ export default function AdminsPage() {
       });
   };
 
+  useEffect(() => {
+    fetch('/api/cms/me', { headers: getCmsHeaders() })
+      .then((r) => (handleCmsResponse(r) ? null : r.json()))
+      .then((data) => {
+        if (data?.success && data?.data) setMe(data.data);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => load(), []);
 
   const openAdd = () => {
-    setForm({ username: '', email: '', password: '' });
+    setEditingId(null);
+    setForm({
+      username: '',
+      full_name: '',
+      nickname: '',
+      email: '',
+      password: '',
+      is_active: true,
+      view_only: true,
+      can_delete_admins: false,
+      can_manage_users: false,
+    });
+    setModalOpen(true);
+  };
+
+  const openEdit = (a) => {
+    setEditingId(a.id);
+    setForm({
+      username: a.username || '',
+      full_name: a.full_name || '',
+      nickname: a.nickname || '',
+      email: a.email || '',
+      password: '',
+      is_active: a.is_active !== false,
+      view_only: a.permissions?.view_only !== false,
+      can_delete_admins: a.permissions?.can_delete_admins === true,
+      can_manage_users: a.permissions?.can_manage_users === true,
+    });
     setModalOpen(true);
   };
 
   const save = () => {
-    const { username, email, password } = form;
+    const { username, full_name, nickname, email, password, view_only, can_delete_admins, can_manage_users } = form;
+    const perms = { view_only: !!view_only, can_delete_admins: !!can_delete_admins, can_manage_users: !!can_manage_users };
+    if (editingId) {
+      fetch('/api/cms/admins/' + editingId, {
+        method: 'PUT',
+        headers: getCmsHeaders(),
+        body: JSON.stringify({
+          username: username?.trim() || undefined,
+          full_name: full_name?.trim() || null,
+          nickname: nickname?.trim() || null,
+          permissions: perms,
+          is_active: form.is_active,
+        }),
+      })
+        .then((r) => (handleCmsResponse(r) ? null : r.json().catch(() => null)))
+        .then((data) => {
+          if (data === null) return;
+          if (data.success) {
+            showAlert('แก้ไขแอดมินแล้ว', 'success');
+            setModalOpen(false);
+            setEditingId(null);
+            load();
+          } else showAlert(data?.message || 'แก้ไขไม่สำเร็จ', 'error');
+        })
+        .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
+      return;
+    }
     if (!username?.trim() || !email?.trim() || !password) {
       showAlert('กรุณากรอกชื่อผู้ใช้ อีเมล และรหัสผ่าน', 'error');
       return;
@@ -59,7 +147,14 @@ export default function AdminsPage() {
     fetch('/api/cms/admins', {
       method: 'POST',
       headers: getCmsHeaders(),
-      body: JSON.stringify({ username: username.trim(), email: email.trim(), password }),
+      body: JSON.stringify({
+        username: username.trim(),
+        full_name: full_name?.trim() || null,
+        nickname: nickname?.trim() || null,
+        email: email.trim(),
+        password,
+        permissions: perms,
+      }),
     })
       .then((r) => {
         if (handleCmsResponse(r)) return null;
@@ -72,6 +167,20 @@ export default function AdminsPage() {
           setModalOpen(false);
           load();
         } else showAlert(data?.message || 'สร้างไม่สำเร็จ', 'error');
+      })
+      .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
+  };
+
+  const onDelete = (id) => {
+    if (!confirm('ต้องการลบแอดมินคนนี้ใช่หรือไม่?')) return;
+    fetch('/api/cms/admins/' + id, { method: 'DELETE', headers: getCmsHeaders() })
+      .then((r) => (handleCmsResponse(r) ? null : r.json()))
+      .then((data) => {
+        if (data === null) return;
+        if (data.success) {
+          showAlert('ลบแอดมินแล้ว', 'success');
+          load();
+        } else showAlert(data?.message || 'ลบไม่สำเร็จ', 'error');
       })
       .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
   };
@@ -110,14 +219,18 @@ export default function AdminsPage() {
               <p className="m-0">ยังไม่มีแอดมิน</p>
             </div>
           ) : (
-            <table className="w-full min-w-[600px] border-collapse">
+            <table className="w-full min-w-[800px] border-collapse">
               <thead>
                 <tr>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ลำดับ</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ชื่อผู้ใช้</th>
+                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ชื่อ-นามสกุล</th>
+                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ชื่อเล่น</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">อีเมล</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สถานะ</th>
+                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สิทธิ์</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สร้างเมื่อ</th>
+                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ดำเนินการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,6 +238,8 @@ export default function AdminsPage() {
                   <tr key={a.id} className="hover:bg-slate-50">
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{i + 1}</td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{a.username || '-'}</td>
+                    <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{a.full_name || '-'}</td>
+                    <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{a.nickname || '-'}</td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">{a.email || '-'}</td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">
                       {a.is_active !== false ? (
@@ -133,8 +248,31 @@ export default function AdminsPage() {
                         <span className="inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">ระงับ</span>
                       )}
                     </td>
+                    <td className="border-b border-gray-200 px-3 py-2 text-sm text-slate-600 md:px-4 md:py-3">{formatPermissions(a.permissions)}</td>
                     <td className="border-b border-gray-200 px-3 py-2 text-sm md:px-4 md:py-3">
                       {a.created_at ? new Date(a.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </td>
+                    <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {me?.permissions?.can_manage_users && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                            onClick={() => openEdit(a)}
+                          >
+                            แก้ไข
+                          </button>
+                        )}
+                        {me?.permissions?.can_delete_admins && me?.id !== a.id && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                            onClick={() => onDelete(a.id)}
+                          >
+                            ลบ
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -147,7 +285,7 @@ export default function AdminsPage() {
       {modalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-5">
           <div className="w-full max-w-[420px] rounded-lg bg-white shadow-xl">
-            <div className="border-b border-gray-200 px-5 py-4 font-semibold">สร้างแอดมินใหม่</div>
+            <div className="border-b border-gray-200 px-5 py-4 font-semibold">{editingId ? 'แก้ไขแอดมิน' : 'สร้างแอดมินใหม่'}</div>
             <div className="p-5">
               <div className="mb-4">
                 <label className="mb-1.5 block font-medium text-gray-800">ชื่อผู้ใช้ *</label>
@@ -159,30 +297,102 @@ export default function AdminsPage() {
                 />
               </div>
               <div className="mb-4">
-                <label className="mb-1.5 block font-medium text-gray-800">อีเมล *</label>
+                <label className="mb-1.5 block font-medium text-gray-800">ชื่อจริงนามสกุล</label>
                 <input
-                  type="email"
                   className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
-                  placeholder="admin2@magicbizcard.local"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="เช่น สมชาย ใจดี"
+                  value={form.full_name}
+                  onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
                 />
               </div>
               <div className="mb-4">
-                <label className="mb-1.5 block font-medium text-gray-800">รหัสผ่าน * (อย่างน้อย 6 ตัวอักษร)</label>
+                <label className="mb-1.5 block font-medium text-gray-800">ชื่อเล่นแอดมิน</label>
                 <input
-                  type="password"
                   className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
-                  placeholder="••••••••"
-                  value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="เช่น แอดมินบอส"
+                  value={form.nickname}
+                  onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))}
                 />
+              </div>
+              {!editingId && (
+                <>
+                  <div className="mb-4">
+                    <label className="mb-1.5 block font-medium text-gray-800">อีเมล *</label>
+                    <input
+                      type="email"
+                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                      placeholder="admin2@magicbizcard.local"
+                      value={form.email}
+                      onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="mb-1.5 block font-medium text-gray-800">รหัสผ่าน * (อย่างน้อย 6 ตัวอักษร)</label>
+                    <input
+                      type="password"
+                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                      placeholder="••••••••"
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    />
+                  </div>
+                </>
+              )}
+              {editingId && (
+                <>
+                  <div className="mb-4 text-sm text-slate-500">
+                    อีเมล: {form.email || '-'} (ไม่สามารถแก้ไขได้)
+                  </div>
+                  <div className="mb-4">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={form.is_active === true}
+                        onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
+                      />
+                      <span className="text-sm font-medium text-gray-800">สถานะใช้งาน</span>
+                    </label>
+                  </div>
+                </>
+              )}
+              <div className="mb-4">
+                <span className="mb-2 block font-medium text-gray-800">สิทธิ์แอดมิน (ติ๊กเลือก)</span>
+                <div className="space-y-2 rounded-md border border-gray-200 bg-slate-50 p-3">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.view_only === true}
+                      onChange={(e) => setForm((f) => ({ ...f, view_only: e.target.checked }))}
+                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
+                    />
+                    <span className="text-sm">{PERM_LABELS.view_only}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.can_delete_admins === true}
+                      onChange={(e) => setForm((f) => ({ ...f, can_delete_admins: e.target.checked }))}
+                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
+                    />
+                    <span className="text-sm">{PERM_LABELS.can_delete_admins}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.can_manage_users === true}
+                      onChange={(e) => setForm((f) => ({ ...f, can_manage_users: e.target.checked }))}
+                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
+                    />
+                    <span className="text-sm">{PERM_LABELS.can_manage_users}</span>
+                  </label>
+                </div>
               </div>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   type="button"
                   className="inline-flex items-center justify-center rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => { setModalOpen(false); setEditingId(null); }}
                 >
                   ยกเลิก
                 </button>
@@ -191,7 +401,7 @@ export default function AdminsPage() {
                   className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
                   onClick={save}
                 >
-                  สร้างแอดมิน
+                  {editingId ? 'บันทึก' : 'สร้างแอดมิน'}
                 </button>
               </div>
             </div>

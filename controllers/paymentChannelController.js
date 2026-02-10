@@ -1,6 +1,20 @@
 const pool = require('../config/database');
+const paymentGatewayService = require('../services/paymentGatewayService');
+const { decryptIfEncrypted } = require('../utils/encryption');
 
 const CHANNEL_TYPES = ['qr_self', 'credit_card', 'debit_card'];
+
+/** ถอดรหัส PII ของช่องทางการชำระเงินก่อนส่งให้ frontend (รองรับกรณีเก็บแบบเข้ารหัสในอนาคต) */
+function mapChannelForResponse(row) {
+    if (!row) return row;
+    return {
+        ...row,
+        full_name: row.full_name != null ? (decryptIfEncrypted(row.full_name) ?? row.full_name) : null,
+        promptpay_phone: row.promptpay_phone != null ? (decryptIfEncrypted(row.promptpay_phone) ?? row.promptpay_phone) : null,
+        promptpay_id: row.promptpay_id != null ? (decryptIfEncrypted(row.promptpay_id) ?? row.promptpay_id) : null,
+        bank_account_masked: row.bank_account_masked != null ? (decryptIfEncrypted(row.bank_account_masked) ?? row.bank_account_masked) : null
+    };
+}
 
 function sanitizeChannel(body) {
     const channel_type = (body.channel_type || 'qr_self').toLowerCase();
@@ -26,7 +40,8 @@ async function getMyChannels(req, res) {
             'SELECT id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, created_at, updated_at FROM payment_channels WHERE user_id = $1 ORDER BY is_default DESC, created_at DESC',
             [userId]
         );
-        res.json({ success: true, data: result.rows || [] });
+        const data = (result.rows || []).map(mapChannelForResponse);
+        res.json({ success: true, data });
     } catch (err) {
         console.error('getMyChannels error:', err);
         res.status(500).json({ success: false, message: 'โหลดรายการไม่สำเร็จ' });
@@ -50,18 +65,47 @@ async function createChannel(req, res) {
         const body = req.body || {};
         const { type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label } = sanitizeChannel(body);
         const is_default = body.is_default === true || body.is_default === 'true';
+
+        let stripe_customer_id = null;
+        let stripe_payment_method_id = null;
+        let final_card_last_four = card_last_four;
+        let final_card_brand = card_brand;
+        let final_full_name = full_name;
+
+        if (type === 'credit_card' || type === 'debit_card') {
+            const paymentMethodId = body.payment_method_id && String(body.payment_method_id).trim();
+            if (!paymentMethodId) {
+                return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลบัตร (payment_method_id จำเป็นเมื่อเลือกบัตร)' });
+            }
+            const userRow = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
+            const email = userRow.rows[0] && userRow.rows[0].email ? userRow.rows[0].email : undefined;
+            const reg = await paymentGatewayService.registerCard(userId, paymentMethodId, { full_name: full_name || undefined, email });
+            if (!reg.success) {
+                return res.status(400).json({ success: false, message: reg.message || 'ลงทะเบียนบัตรไม่สำเร็จ' });
+            }
+            stripe_customer_id = reg.stripe_customer_id;
+            stripe_payment_method_id = reg.stripe_payment_method_id;
+            final_card_last_four = reg.card_last_four || final_card_last_four;
+            final_card_brand = reg.card_brand || final_card_brand;
+            final_full_name = final_full_name || undefined;
+        }
+
         const insert = await pool.query(
-            `INSERT INTO payment_channels (user_id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, created_at`,
-            [userId, type, full_name, card_last_four || null, card_brand || null, bank_name || null, bank_account_masked || null, promptpay_phone || null, promptpay_id || null, display_label || null, is_default]
+            `INSERT INTO payment_channels (user_id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, stripe_customer_id, stripe_payment_method_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, created_at, updated_at`,
+            [userId, type, final_full_name, final_card_last_four || null, final_card_brand || null, bank_name || null, bank_account_masked || null, promptpay_phone || null, promptpay_id || null, display_label || null, is_default, stripe_customer_id, stripe_payment_method_id]
         );
         if (is_default) {
             await pool.query('UPDATE payment_channels SET is_default = false WHERE user_id = $1 AND id != $2', [userId, insert.rows[0].id]);
         }
-        res.status(201).json({ success: true, message: 'เพิ่มช่องทางชำระเงินแล้ว', data: insert.rows[0] });
+        res.status(201).json({ success: true, message: 'เพิ่มช่องทางชำระเงินแล้ว', data: mapChannelForResponse(insert.rows[0]) });
     } catch (err) {
         console.error('createChannel error:', err);
-        res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });
+        const isMissingColumn = err.code === '42703' || (err.message && /stripe_customer_id|stripe_payment_method_id/.test(err.message));
+        const message = isMissingColumn
+            ? 'ฐานข้อมูลยังไม่มีคอลัมน์ Stripe กรุณารัน migration: psql -U user -d dbname -f database/add-stripe-payment-channels.sql'
+            : (err.message || 'บันทึกไม่สำเร็จ');
+        res.status(500).json({ success: false, message });
     }
 }
 
@@ -87,7 +131,7 @@ async function updateChannel(req, res) {
             await pool.query('UPDATE payment_channels SET is_default = false WHERE user_id = $1 AND id != $2', [userId, id]);
         }
         const row = await pool.query('SELECT id, channel_type, full_name, card_last_four, card_brand, bank_name, bank_account_masked, promptpay_phone, promptpay_id, display_label, is_default, created_at, updated_at FROM payment_channels WHERE id = $1', [id]);
-        res.json({ success: true, message: 'แก้ไขแล้ว', data: row.rows[0] });
+        res.json({ success: true, message: 'แก้ไขแล้ว', data: mapChannelForResponse(row.rows[0]) });
     } catch (err) {
         console.error('updateChannel error:', err);
         res.status(500).json({ success: false, message: 'บันทึกไม่สำเร็จ' });

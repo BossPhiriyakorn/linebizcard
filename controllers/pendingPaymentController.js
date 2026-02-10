@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { addCmsNotification } = require('../utils/cmsNotification');
+const { decryptIfEncrypted } = require('../utils/encryption');
 
 /**
  * ดูรายการรอชำระ (สำหรับหน้า QR - เฉพาะของตัวเอง และ status ยังไม่ approved/rejected)
@@ -29,8 +30,8 @@ async function getPaymentRequest(req, res) {
                 ...item,
                 qr_payment: {
                     bank_name: qrPayment.qr_payment_bank_name || null,
-                    account_no: qrPayment.qr_payment_account_no || null,
-                    account_name: qrPayment.qr_payment_account_name || null,
+                    account_no: decryptIfEncrypted(qrPayment.qr_payment_account_no) ?? qrPayment.qr_payment_account_no ?? null,
+                    account_name: decryptIfEncrypted(qrPayment.qr_payment_account_name) ?? qrPayment.qr_payment_account_name ?? null,
                     qr_image_url: qrPayment.qr_payment_qr_image_url || null,
                 }
             }
@@ -51,8 +52,9 @@ async function uploadSlip(req, res) {
         if (isNaN(userId)) return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' });
         if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
         const file = req.file;
-        if (!file || !file.path) return res.status(400).json({ success: false, message: 'กรุณาเลือกไฟล์สลิป' });
-        const relPath = '/uploads/images/' + file.filename;
+        if (!file || !file.filename) return res.status(400).json({ success: false, message: 'กรุณาเลือกไฟล์สลิป' });
+        const uploadDirName = process.env.UPLOAD_DIR || 'uploads/images';
+        const relPath = '/' + uploadDirName + '/' + String(userId) + '/' + file.filename;
         const owner = await pool.query('SELECT id, status FROM pending_payments WHERE id = $1 AND user_id = $2', [id, userId]);
         if (owner.rows.length === 0) return res.status(404).json({ success: false, message: 'ไม่พบรายการนี้' });
         if (owner.rows[0].status !== 'pending') return res.status(400).json({ success: false, message: 'รายการนี้แนบสลิปแล้วหรือปิดแล้ว' });

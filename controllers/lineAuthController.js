@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { exchangeCodeForToken, verifyIdToken, getUserProfile } = require('../services/lineService');
 const { generateToken } = require('../middleware/auth');
 const { addCmsNotification } = require('../utils/cmsNotification');
+const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
 const crypto = require('crypto');
 
 /**
@@ -130,7 +131,7 @@ async function lineCallback(req, res) {
             }
             // เพิ่ม token ใน query parameters
             const separator = redirectUrl.includes('?') ? '&' : '?';
-            console.log('Share flow detected from state, redirecting to:', `${redirectUrl}${separator}token=${token}`);
+            console.log('Share flow detected from state, redirecting (token omitted from log)');
             res.redirect(`${redirectUrl}${separator}token=${token}`);
             return;
         }
@@ -142,7 +143,7 @@ async function lineCallback(req, res) {
                 // ตรวจสอบว่ามี query parameters name หรือไม่
                 if (refererUrl.searchParams.has('name') || refererUrl.search.includes('name=')) {
                     refererUrl.searchParams.set('token', token);
-                    console.log('Share flow detected from referer, redirecting to:', refererUrl.toString());
+                    console.log('Share flow detected from referer, redirecting');
                     res.redirect(refererUrl.toString());
                     return;
                 }
@@ -174,10 +175,7 @@ async function lineCallback(req, res) {
         // ถ้าเป็น LIFF share flow → redirect กลับไปที่ BASE_URL
         // share.html จะจัดการ query parameters จาก localStorage
         if (isLiffShareFlow && !isShareFlowFromState && !isShareFlowFromReferer) {
-            console.log('⚠️ LIFF share flow detected - redirecting to BASE_URL');
-            console.log('Referer:', referer);
-            console.log('State:', stateParam);
-            console.log('Callback URL:', callbackUrl);
+            console.log('LIFF share flow detected - redirecting to BASE_URL');
             const shareUrl = `${baseUrl}/?token=${token}`;
             res.redirect(shareUrl);
             return;
@@ -197,7 +195,7 @@ async function lineCallback(req, res) {
     } catch (error) {
         const msg = error.message || String(error);
         const detail = error.response?.data ? JSON.stringify(error.response.data) : '';
-        console.error('LINE callback error:', msg, detail || '');
+        console.error('LINE callback error:', msg || '');
         const fullMsg = detail ? `${msg} (API: ${detail})` : msg;
         res.redirect(`/liff/login?error=${encodeURIComponent(fullMsg)}`);
     }
@@ -219,7 +217,7 @@ async function lineLogin(req, res) {
         
         res.redirect(loginUrl);
     } catch (error) {
-        console.error('LINE login error:', error);
+        console.error('LINE login error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการเริ่มต้น LINE Login'
@@ -259,7 +257,7 @@ async function getLineUser(req, res) {
             data: result.rows[0]
         });
     } catch (error) {
-        console.error('Get LINE user error:', error);
+        console.error('Get LINE user error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการดึงข้อมูล user'
@@ -274,7 +272,7 @@ async function getLineUser(req, res) {
 async function completeProfile(req, res) {
     try {
         const userId = req.user.id;
-        const { first_name, last_name, nickname, phone, email } = req.body;
+        const { first_name, last_name, nickname, phone, email, accepted_privacy_policy, accepted_terms } = req.body;
 
         // Validation
         if (!first_name || !last_name || !phone || !email) {
@@ -284,23 +282,41 @@ async function completeProfile(req, res) {
             });
         }
 
-        // ดึงอีเมลเดิมเพื่อเช็กว่ามีการเปลี่ยนหรือไม่ — ถ้าเปลี่ยนให้ถือว่ายังไม่ยืนยันตัวตน
+        // ดึงสถานะปัจจุบัน (ลงทะเบียนครั้งแรกหรือแก้ไขโปรไฟล์)
         const current = await pool.query(
-            'SELECT email, email_verified, email_verified_at FROM users WHERE id = $1',
+            'SELECT email, email_verified, email_verified_at, is_profile_complete FROM users WHERE id = $1',
             [userId]
         );
+        const isFirstCompletion = !current.rows[0]?.is_profile_complete;
+        if (isFirstCompletion && (!accepted_privacy_policy || !accepted_terms)) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณาอ่านและยอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้บริการ'
+            });
+        }
+
         const currentEmail = current.rows[0]?.email;
         const emailChanged = currentEmail != null && currentEmail.trim().toLowerCase() !== String(email).trim().toLowerCase();
         const newEmailVerified = emailChanged ? false : (current.rows[0]?.email_verified ?? false);
         const newEmailVerifiedAt = emailChanged ? null : (current.rows[0]?.email_verified_at ?? null);
 
-        // อัปเดตข้อมูล user (บรรทัดเดียวกัน — ถ้าอีเมลเปลี่ยน ตั้ง email_verified = false, email_verified_at = NULL)
+        const ef = encrypt(first_name);
+        const el = encrypt(last_name);
+        const en = nickname != null && nickname !== '' ? encrypt(nickname) : null;
+        const ep = encrypt(phone);
+        const now = new Date();
+        // ลงทะเบียนครั้งแรก = บันทึกเวลายอมรับ; แก้ไขโปรไฟล์ = ไม่เปลี่ยน accepted_*_at
         const result = await pool.query(
-            `UPDATE users 
-            SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6, email_verified = $8, email_verified_at = $9
-            WHERE id = $7
-            RETURNING id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, is_profile_complete`,
-            [first_name, last_name, nickname, phone, email, true, userId, newEmailVerified, newEmailVerifiedAt]
+            isFirstCompletion
+                ? `UPDATE users 
+                    SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6, email_verified = $8, email_verified_at = $9, accepted_privacy_policy_at = $10, accepted_terms_at = $11
+                    WHERE id = $7
+                    RETURNING id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, is_profile_complete`
+                : `UPDATE users 
+                    SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6, email_verified = $8, email_verified_at = $9
+                    WHERE id = $7
+                    RETURNING id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, is_profile_complete`,
+            isFirstCompletion ? [ef, el, en, ep, email, true, userId, newEmailVerified, newEmailVerifiedAt, now, now] : [ef, el, en, ep, email, true, userId, newEmailVerified, newEmailVerifiedAt]
         );
 
         if (result.rows.length === 0) {
@@ -335,7 +351,7 @@ async function completeProfile(req, res) {
                 }
             }
         } catch (e) {
-            console.error('Create free membership on complete-profile:', e);
+            console.error('Create free membership on complete-profile:', e && e.message ? e.message : '');
         }
 
         res.json({
@@ -345,16 +361,16 @@ async function completeProfile(req, res) {
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                first_name: user.first_name,
-                last_name: user.last_name,
-                nickname: user.nickname,
-                phone: user.phone,
+                first_name: decryptIfEncrypted(user.first_name),
+                last_name: decryptIfEncrypted(user.last_name),
+                nickname: decryptIfEncrypted(user.nickname),
+                phone: decryptIfEncrypted(user.phone),
                 line_user_id: user.line_user_id,
                 login_type: user.login_type
             }
         });
     } catch (error) {
-        console.error('Complete profile error:', error);
+        console.error('Complete profile error:', error && error.message ? error.message : '');
         res.status(500).json({
             success: false,
             message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + error.message

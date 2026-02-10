@@ -8,9 +8,11 @@ const packageController = require('../controllers/packageController');
 const couponController = require('../controllers/couponController');
 const paymentChannelController = require('../controllers/paymentChannelController');
 const pendingPaymentController = require('../controllers/pendingPaymentController');
+const linePayController = require('../controllers/linePayController');
 const { uploadSingle, uploadMultiple, uploadSlip, handleUploadError } = require('../middleware/upload');
-const { rateLimitCreateCard } = require('../middleware/rateLimit');
+const { rateLimitCreateCard, rateLimitPayment, rateLimitPaymentChannels } = require('../middleware/rateLimit');
 const pool = require('../config/database');
+const { decryptIfEncrypted } = require('../utils/encryption');
 
 // Timeout 1 นาที สำหรับ create-card: เมื่อเกินเวลาจะส่ง 408 พร้อมข้อความชัดเจน
 function createCardTimeoutHandler(req, res, next) {
@@ -36,17 +38,31 @@ router.get('/health', async (req, res) => {
     }
 });
 
-// แพ็กเกจ (สำหรับลูกค้าเลือกหลังสมัคร)
+// แพ็กเกจ (สำหรับลูกค้าเลือกหลังสมัคร) — rate limit ลด abuse
 router.get('/packages', packageController.getActivePackages);
-router.post('/choose-package', authenticateToken, packageController.choosePackage);
-router.post('/validate-coupon', authenticateToken, packageController.validateCoupon);
-router.post('/create-pending-payment', authenticateToken, requireActiveUser, packageController.createPendingPayment);
+router.post('/choose-package', rateLimitPayment, authenticateToken, packageController.choosePackage);
+router.post('/confirm-payment-after-3ds', rateLimitPayment, authenticateToken, requireActiveUser, packageController.confirmPaymentAfter3ds);
+router.post('/validate-coupon', rateLimitPayment, authenticateToken, packageController.validateCoupon);
+router.post('/create-pending-payment', rateLimitPayment, authenticateToken, requireActiveUser, packageController.createPendingPayment);
 
-// ช่องทางการชำระเงิน (ลูกค้า)
-router.get('/payment-channels', authenticateToken, requireActiveUser, paymentChannelController.getMyChannels);
-router.post('/payment-channels', authenticateToken, requireActiveUser, paymentChannelController.createChannel);
-router.put('/payment-channels/:id', authenticateToken, requireActiveUser, paymentChannelController.updateChannel);
-router.delete('/payment-channels/:id', authenticateToken, requireActiveUser, paymentChannelController.deleteChannel);
+// LINE Pay (รอเชื่อมต่อ API จริง)
+router.get('/line-pay/status', (req, res) => {
+    try {
+        const linePayService = require('../services/linePayService');
+        const status = linePayService.getStatus();
+        res.json({ success: true, data: status });
+    } catch (err) {
+        res.json({ success: true, data: { configured: false, provider: null } });
+    }
+});
+router.post('/line-pay/reserve', authenticateToken, requireActiveUser, linePayController.reserve);
+router.get('/line-pay/confirm', linePayController.confirm);
+
+// ช่องทางการชำระเงิน (ลูกค้า) — rate limit ลด abuse
+router.get('/payment-channels', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.getMyChannels);
+router.post('/payment-channels', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.createChannel);
+router.put('/payment-channels/:id', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.updateChannel);
+router.delete('/payment-channels/:id', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.deleteChannel);
 
 router.get('/payment-requests/:id', authenticateToken, requireActiveUser, pendingPaymentController.getPaymentRequest);
 router.post('/payment-requests/:id/upload-slip', authenticateToken, requireActiveUser, uploadSlip, handleUploadError, pendingPaymentController.uploadSlip);
@@ -66,6 +82,25 @@ router.get('/payment-gateway/status', (req, res) => {
 router.get('/coupons/my', authenticateToken, requireActiveUser, couponController.getMyCoupons);
 router.post('/coupons/save-for-next-payment', authenticateToken, requireActiveUser, couponController.saveForNextPayment);
 router.post('/coupons/redeem', authenticateToken, requireActiveUser, couponController.redeemCoupon);
+
+// เนื้อหาสำหรับการยินยอม (นโยบายความเป็นส่วนตัว / ข้อกำหนด) — ใช้แสดงบนหน้าลงทะเบียน (ไม่ต้อง login)
+router.get('/consent-documents', async (req, res) => {
+    try {
+        const r = await pool.query(
+            'SELECT privacy_policy_content, terms_of_service_content FROM cms_settings WHERE id = 1 LIMIT 1'
+        );
+        const row = r.rows[0] || {};
+        res.json({
+            success: true,
+            data: {
+                privacy_policy: row.privacy_policy_content || '',
+                terms_of_service: row.terms_of_service_content || ''
+            }
+        });
+    } catch (err) {
+        res.json({ success: true, data: { privacy_policy: '', terms_of_service: '' } });
+    }
+});
 
 // Templates
 router.get('/templates', templateController.getAllTemplates);
@@ -124,7 +159,15 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
             });
         }
 
-        const user = userResult.rows[0];
+        const rawUser = userResult.rows[0];
+        // ถอดรหัส PII ก่อนส่งให้ frontend แสดงผล (ชื่อ นามสกุล ชื่อเล่น เบอร์โทร)
+        const user = {
+            ...rawUser,
+            first_name: decryptIfEncrypted(rawUser.first_name) ?? rawUser.first_name,
+            last_name: decryptIfEncrypted(rawUser.last_name) ?? rawUser.last_name,
+            nickname: decryptIfEncrypted(rawUser.nickname) ?? rawUser.nickname,
+            phone: decryptIfEncrypted(rawUser.phone) ?? rawUser.phone
+        };
 
         // ตรวจสอบว่ามี card อยู่แล้วหรือไม่
         const cardResult = await pool.query(

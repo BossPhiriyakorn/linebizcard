@@ -1,9 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import CustomerAppBar from '../components/CustomerAppBar';
+import { handleAuthResponse } from '../utils/auth';
 
 const token = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
 const headers = () => ({ Authorization: 'Bearer ' + token() });
@@ -11,6 +14,63 @@ const headers = () => ({ Authorization: 'Bearer ' + token() });
 const inputClass =
   'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
 const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
+
+function CardChannelForm({ fullName, setFullName, saving, onSuccess, onCancel, labelClass: lc, inputClass: ic }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [err, setErr] = useState('');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErr('');
+    if (!stripe || !elements) return;
+    const cardNumber = elements.getElement(CardNumberElement);
+    if (!cardNumber) return;
+    const { error, paymentMethod } = await stripe.createPaymentMethod({
+      type: 'card',
+      card: cardNumber,
+      billing_details: { name: fullName || undefined },
+    });
+    if (error) {
+      setErr(error.message || 'เกิดข้อผิดพลาด');
+      return;
+    }
+    onSuccess(paymentMethod.id, fullName);
+  };
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className={lc}>ชื่อ-นามสกุล (สำหรับใบเสร็จ)</label>
+        <input type="text" value={fullName || ''} onChange={(e) => setFullName(e.target.value)} className={ic} placeholder="ชื่อบนบัตร" />
+      </div>
+      <div className="space-y-4">
+        <label className={lc}>ข้อมูลบัตร (ระบบไม่เก็บเลขบัตร — ผ่าน Stripe)</label>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">เลขบัตร</label>
+          <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3">
+            <CardNumberElement options={{ style: { base: { fontSize: '16px' } } }} />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">วันหมดอายุ (MM/YY)</label>
+          <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3">
+            <CardExpiryElement options={{ style: { base: { fontSize: '16px' } } }} />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">CVC</label>
+          <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3">
+            <CardCvcElement options={{ style: { base: { fontSize: '16px' } } }} />
+          </div>
+        </div>
+      </div>
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onCancel}>ยกเลิก</button>
+        <button type="submit" className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#0FA03A] disabled:opacity-50" disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+      </div>
+    </form>
+  );
+}
 
 function formatDate(value) {
   if (!value) return '-';
@@ -27,6 +87,7 @@ function ProfileContent() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [paymentChannels, setPaymentChannels] = useState([]);
+  const [channelsLoadError, setChannelsLoadError] = useState(null); // 'auth' = 401/403 ควรเข้าสู่ระบบใหม่
   const [channelModalOpen, setChannelModalOpen] = useState(false);
   const [channelForm, setChannelForm] = useState({
     channel_type: 'promptpay',
@@ -41,14 +102,17 @@ function ProfileContent() {
   });
   const [savingChannel, setSavingChannel] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState(null);
+  /** สถานะ Stripe (จาก GET /api/payment-gateway/status) — สำหรับเตรียมการแสดงฟอร์มบัตรเมื่อเชื่อมต่อแล้ว */
+  const [gatewayStatus, setGatewayStatus] = useState(null);
+  const stripePromise = useMemo(
+    () => (gatewayStatus?.publicKey ? loadStripe(gatewayStatus.publicKey) : null),
+    [gatewayStatus?.publicKey]
+  );
 
   const fetchProfile = () => {
     fetch('/api/user/profile', { headers: headers() })
       .then((r) => {
-        if (r.status === 401) {
-          window.location.href = '/';
-          return null;
-        }
+        if (handleAuthResponse(r)) return null;
         return r.json();
       })
       .then((data) => {
@@ -71,17 +135,47 @@ function ProfileContent() {
     fetchProfile();
   }, []);
 
-  const fetchPaymentChannels = () => {
-    fetch('/api/payment-channels', { headers: headers() })
-      .then((r) => (r.status === 401 ? null : r.json()))
-      .then((data) => {
-        if (data?.success && Array.isArray(data.data)) setPaymentChannels(data.data);
+  const fetchPaymentChannels = (options = {}) => {
+    const { replaceOnlyIfNonEmpty, isRetry } = options;
+    setChannelsLoadError(null);
+    return fetch('/api/payment-channels', { headers: headers() })
+      .then((r) => {
+        if (handleAuthResponse(r)) return null;
+        setChannelsLoadError(null);
+        return r.json();
       })
-      .catch(() => {});
+      .then((data) => {
+        if (data == null) return data;
+        if (!data?.success || !Array.isArray(data.data)) return data;
+        // หลังเพิ่มช่องทางแล้วถ้า refetch ได้รายการว่าง ไม่ให้เขียนทับ (ป้องกันไม่ให้รายการที่เพิ่งเพิ่มหาย)
+        if (replaceOnlyIfNonEmpty && data.data.length === 0) return data;
+        setPaymentChannels(data.data);
+        return data;
+      })
+      .then((data) => {
+        // โหลดครั้งแรกได้รายการว่าง ให้ retry อีกครั้งหนึ่ง (แก้กรณี race หลังบันทึกแล้วรีเฟรช)
+        if (!isRetry && data?.success && Array.isArray(data.data) && data.data.length === 0 && !replaceOnlyIfNonEmpty) {
+          setTimeout(() => fetchPaymentChannels({ isRetry: true }), 1200);
+        }
+        return data;
+      })
+      .catch(() => {
+        setChannelsLoadError(null);
+        return {};
+      });
   };
 
   useEffect(() => {
     if (token()) fetchPaymentChannels();
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/payment-gateway/status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success && data?.data) setGatewayStatus(data.data);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -92,6 +186,31 @@ function ProfileContent() {
     }
   }, [searchParams]);
 
+  // ตรวจสอบว่ามาจากหน้าเลือกแพ็กเกจที่ต้องลงทะเบียนช่องทางชำระเงินหรือไม่
+  useEffect(() => {
+    if (searchParams.get('register_payment') === 'true' && paymentChannels.length === 0 && profile) {
+      setAlert({ 
+        show: true, 
+        msg: 'กรุณาลงทะเบียนช่องทางการชำระเงินก่อนเลือกแพ็กเกจที่ต้องชำระเงิน', 
+        type: 'error' 
+      });
+      // เปิด modal เพิ่มช่องทางชำระเงินอัตโนมัติ
+      setEditingChannelId(null);
+      setChannelForm({
+        channel_type: 'qr_self',
+        full_name: [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || '',
+        card_last_four: '',
+        card_brand: '',
+        bank_name: '',
+        bank_account_masked: '',
+        promptpay_phone: '',
+        promptpay_id: '',
+        is_default: true,
+      });
+      setChannelModalOpen(true);
+    }
+  }, [searchParams, paymentChannels, profile]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -101,6 +220,7 @@ function ProfileContent() {
         headers: { ...headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
+      if (handleAuthResponse(res)) return;
       const data = await res.json();
       if (data.success) {
         setAlert({ show: true, msg: 'บันทึกโปรไฟล์แล้ว', type: 'success' });
@@ -157,19 +277,30 @@ function ProfileContent() {
     const isEdit = Boolean(editingChannelId);
     const url = isEdit ? '/api/payment-channels/' + editingChannelId : '/api/payment-channels';
     const method = isEdit ? 'PUT' : 'POST';
+    const packageId = searchParams.get('package_id');
+    const fromPackageSelection = searchParams.get('register_payment') === 'true';
+    
     fetch(url, {
       method,
       headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify(channelForm),
     })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         setSavingChannel(false);
         if (data?.success) {
           setChannelModalOpen(false);
           setEditingChannelId(null);
           setAlert({ show: true, msg: isEdit ? 'เปลี่ยนช่องทางแล้ว' : 'เพิ่มช่องทางชำระเงินแล้ว', type: 'success' });
           fetchPaymentChannels();
+          
+          // ถ้ามาจากหน้าเลือกแพ็กเกจ ให้ redirect กลับไป
+          if (fromPackageSelection && packageId) {
+            setTimeout(() => {
+              window.location.href = '/payment-summary?package_id=' + packageId;
+            }, 1500);
+          }
         } else setAlert({ show: true, msg: data?.message || 'บันทึกไม่สำเร็จ', type: 'error' });
       })
       .catch(() => {
@@ -181,8 +312,9 @@ function ProfileContent() {
   const deleteChannel = (id) => {
     if (!window.confirm('ต้องการลบช่องทางชำระเงินนี้หรือไม่?')) return;
     fetch('/api/payment-channels/' + id, { method: 'DELETE', headers: headers() })
-      .then((r) => r.json())
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
+        if (data == null) return;
         if (data?.success) {
           setAlert({ show: true, msg: 'ลบแล้ว', type: 'success' });
           fetchPaymentChannels();
@@ -406,7 +538,11 @@ function ProfileContent() {
           </button>
         </div>
         <p className="mb-4 text-sm text-gray-500">ลงทะเบียนวิธีชำระเงินสำหรับใช้ในระบบ (ระบบไม่เก็บเลขบัตรเต็ม เพื่อความปลอดภัย)</p>
-        {paymentChannels.length === 0 ? (
+        {channelsLoadError === 'auth' ? (
+          <p className="py-8 text-center text-amber-700">
+            ไม่สามารถโหลดรายการได้ — กรุณา<Link href="/liff/login" className="underline font-medium">เข้าสู่ระบบใหม่</Link> แล้วรีเฟรชหน้านี้
+          </p>
+        ) : paymentChannels.length === 0 ? (
           <p className="py-8 text-center text-gray-500">ยังไม่มีช่องทางชำระเงิน กดปุ่มด้านบนเพื่อเพิ่ม</p>
         ) : (
           <div className="overflow-x-auto">
@@ -447,71 +583,143 @@ function ProfileContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl">
             <div className="border-b border-gray-200 px-5 py-4 font-semibold">{editingChannelId ? 'เปลี่ยนช่องทางการชำระเงิน' : 'เพิ่มช่องทางชำระเงิน'}</div>
-            <form onSubmit={saveChannel} className="space-y-4 p-5">
-              <div>
-                <label className={labelClass}>ประเภทช่องทาง *</label>
-                <select
-                  value={channelForm.channel_type}
-                  onChange={(e) => setChannelForm((f) => ({ ...f, channel_type: e.target.value }))}
-                  className={inputClass}
-                >
-                  <option value="qr_self">คิวอาร์โค้ด (ชำระด้วยตัวเอง)</option>
-                  <option value="credit_card">บัตรเครดิต (ตัดเงินอัตโนมัติ)</option>
-                  <option value="debit_card">บัตรเดบิต (ตัดเงินอัตโนมัติ)</option>
-                </select>
-              </div>
-
-              {(channelForm.channel_type === 'credit_card' || channelForm.channel_type === 'debit_card') ? (
-                <>
-                  <div className="rounded-lg border-2 border-amber-200 bg-amber-50 p-4">
-                    <p className="mb-2 font-semibold text-amber-800">รอพัฒนาก่อน</p>
-                    <p className="mb-3 text-sm text-amber-700">
-                      ช่องทางบัตรเครดิต/เดบิต (ตัดเงินอัตโนมัติ) กำลังเตรียมการเชื่อมต่อ Payment Gateway
-                      เมื่อเชื่อมต่อแล้ว ลูกค้าจะสามารถลงทะเบียนบัตรเพื่อตัดยอดอัตโนมัติได้จากหน้านี้
-                    </p>
-                    <div className="rounded border border-amber-200 bg-white/60 p-3 text-sm text-gray-600">
-                      <p className="mb-2 font-medium text-gray-700">เตรียมระบบสำหรับการเชื่อมต่อ Payment Gateway</p>
-                      <ul className="list-inside list-disc space-y-1 text-xs">
-                        <li>ฟอร์มกรอกข้อมูลบัตรจะแสดงเมื่อเชื่อมต่อ Gateway แล้ว</li>
-                        <li>ระบบจะไม่เก็บเลขบัตรเต็ม (ตามมาตรฐาน PCI)</li>
-                        <li>ตัดยอดอัตโนมัติเมื่อเลือกแพ็กเกจด้วยวิธีชำระบัตร</li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={() => { setChannelModalOpen(false); setEditingChannelId(null); }}>ปิด</button>
-                    <button type="button" className="rounded-lg bg-gray-400 px-4 py-2.5 text-sm font-medium text-white cursor-not-allowed" disabled>บันทึก (รอพัฒนาก่อน)</button>
-                  </div>
-                </>
+            {/* ไม่ใช้ form ซ้อน form — ตอนเลือกบัตรใช้เฉพาะฟอร์มใน CardChannelForm เพื่อให้ส่ง payment_method_id ได้ */}
+            {(channelForm.channel_type === 'credit_card' || channelForm.channel_type === 'debit_card') && gatewayStatus?.configured && stripePromise ? (
+              <div className="space-y-4 p-5">
+                <div>
+                  <label className={labelClass}>ประเภทช่องทาง *</label>
+                  <select
+                    value={channelForm.channel_type}
+                    onChange={(e) => setChannelForm((f) => ({ ...f, channel_type: e.target.value }))}
+                    className={inputClass}
+                  >
+                    <option value="qr_self">คิวอาร์โค้ด (ชำระด้วยตัวเอง)</option>
+                    <option value="credit_card">บัตรเครดิต (ตัดเงินอัตโนมัติ)</option>
+                    <option value="debit_card">บัตรเดบิต (ตัดเงินอัตโนมัติ)</option>
+                  </select>
+                </div>
+                <Elements stripe={stripePromise}>
+                  <CardChannelForm
+                      fullName={channelForm.full_name}
+                      setFullName={(v) => setChannelForm((f) => ({ ...f, full_name: v }))}
+                      saving={savingChannel}
+                      labelClass={labelClass}
+                      inputClass={inputClass}
+                      onSuccess={(paymentMethodId, fullName) => {
+                        setSavingChannel(true);
+                        const packageId = searchParams.get('package_id');
+                        const fromPackageSelection = searchParams.get('register_payment') === 'true';
+                        fetch('/api/payment-channels', {
+                          method: 'POST',
+                          headers: { ...headers(), 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            channel_type: channelForm.channel_type,
+                            payment_method_id: paymentMethodId,
+                            full_name: fullName || '',
+                          }),
+                        })
+                          .then((r) => {
+                            if (handleAuthResponse(r)) return null;
+                            return r.json().catch(() => ({})).then((data) => ({ ok: r.ok, data }));
+                          })
+                          .then((result) => {
+                            setSavingChannel(false);
+                            if (result == null) return;
+                            const { ok, data } = result;
+                            if (ok && data?.success) {
+                              setChannelModalOpen(false);
+                              setEditingChannelId(null);
+                              setAlert({ show: true, msg: 'เพิ่มช่องทางชำระเงินแล้ว', type: 'success' });
+                              const newChannel = data.data && typeof data.data === 'object' && !Array.isArray(data.data) ? data.data : null;
+                              if (newChannel) setPaymentChannels((prev) => [newChannel, ...prev]);
+                              fetchPaymentChannels({ replaceOnlyIfNonEmpty: true });
+                              if (fromPackageSelection && packageId) {
+                                setTimeout(() => { window.location.href = '/payment-summary?package_id=' + packageId; }, 1500);
+                              }
+                            } else {
+                              const msg = data?.message || 'บันทึกไม่สำเร็จ';
+                              setAlert({ show: true, msg, type: 'error' });
+                            }
+                          })
+                          .catch(() => {
+                            setSavingChannel(false);
+                            setAlert({ show: true, msg: 'เกิดข้อผิดพลาด (เครือข่ายหรือเซิร์ฟเวอร์)', type: 'error' });
+                          });
+                      }}
+                      onCancel={() => { setChannelModalOpen(false); setEditingChannelId(null); }}
+                    />
+                  </Elements>
+                </div>
               ) : (
-                <>
+                <form onSubmit={saveChannel} className="space-y-4 p-5">
                   <div>
-                    <label className={labelClass}>ชื่อ-นามสกุล (สำหรับใบเสร็จ/การชำระเงิน)</label>
-                    <input
-                      type="text"
-                      value={channelForm.full_name}
-                      onChange={(e) => setChannelForm((f) => ({ ...f, full_name: e.target.value }))}
+                    <label className={labelClass}>ประเภทช่องทาง *</label>
+                    <select
+                      value={channelForm.channel_type}
+                      onChange={(e) => setChannelForm((f) => ({ ...f, channel_type: e.target.value }))}
                       className={inputClass}
-                      placeholder="ชื่อผู้โอน (สำหรับตรวจสอบสลิป)"
-                    />
+                    >
+                      <option value="qr_self">คิวอาร์โค้ด (ชำระด้วยตัวเอง)</option>
+                      <option value="credit_card">บัตรเครดิต (ตัดเงินอัตโนมัติ)</option>
+                      <option value="debit_card">บัตรเดบิต (ตัดเงินอัตโนมัติ)</option>
+                    </select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="ch_default"
-                      checked={channelForm.is_default}
-                      onChange={(e) => setChannelForm((f) => ({ ...f, is_default: e.target.checked }))}
-                      className="rounded border-gray-300"
-                    />
-                    <label htmlFor="ch_default" className="text-sm font-medium text-gray-700">ตั้งเป็นช่องทางหลัก</label>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={() => { setChannelModalOpen(false); setEditingChannelId(null); }}>ยกเลิก</button>
-                    <button type="submit" className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#0FA03A] disabled:opacity-50" disabled={savingChannel}>{savingChannel ? 'กำลังบันทึก...' : 'บันทึก'}</button>
-                  </div>
-                </>
+                  {(channelForm.channel_type === 'credit_card' || channelForm.channel_type === 'debit_card') ? (
+                    <>
+                      <div className="rounded-lg border-2 border-amber-200 bg-amber-50 p-4">
+                        <p className="mb-2 font-semibold text-amber-800">เตรียมการเชื่อมต่อ Stripe</p>
+                        <p className="mb-3 text-sm text-amber-700">
+                          ช่องทางบัตรเครดิต/เดบิต (ตัดเงินอัตโนมัติ) ใช้ Stripe เมื่อเชื่อมต่อแล้ว ลูกค้าจะสามารถลงทะเบียนบัตรเพื่อตัดยอดอัตโนมัติได้จากหน้านี้
+                        </p>
+                        <div className="rounded border border-amber-200 bg-white/60 p-3 text-sm text-gray-600">
+                          <p className="mb-2 font-medium text-gray-700">การเชื่อมต่อ Stripe</p>
+                          <ul className="list-inside list-disc space-y-1 text-xs">
+                            <li>เมื่อตั้งค่า Stripe ในระบบแล้ว ฟอร์มกรอกข้อมูลบัตร (ผ่าน Stripe) จะแสดงที่นี่</li>
+                            <li>ระบบจะไม่เก็บเลขบัตรเต็ม (ตามมาตรฐาน PCI)</li>
+                            <li>ตัดยอดอัตโนมัติเมื่อเลือกแพ็กเกจด้วยวิธีชำระบัตร</li>
+                          </ul>
+                          {gatewayStatus && (
+                            <p className="mt-2 text-xs text-gray-500">
+                              สถานะ: {gatewayStatus.configured ? 'เชื่อมต่อ Stripe แล้ว' : 'ยังไม่ได้ตั้งค่า Stripe'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={() => { setChannelModalOpen(false); setEditingChannelId(null); }}>ปิด</button>
+                        <button type="button" className="rounded-lg bg-gray-400 px-4 py-2.5 text-sm font-medium text-white cursor-not-allowed" disabled>บันทึก (รอเชื่อมต่อ Stripe)</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className={labelClass}>ชื่อ-นามสกุล (สำหรับใบเสร็จ/การชำระเงิน)</label>
+                        <input
+                          type="text"
+                          value={channelForm.full_name}
+                          onChange={(e) => setChannelForm((f) => ({ ...f, full_name: e.target.value }))}
+                          className={inputClass}
+                          placeholder="ชื่อผู้โอน (สำหรับตรวจสอบสลิป)"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="ch_default"
+                          checked={channelForm.is_default}
+                          onChange={(e) => setChannelForm((f) => ({ ...f, is_default: e.target.checked }))}
+                          className="rounded border-gray-300"
+                        />
+                        <label htmlFor="ch_default" className="text-sm font-medium text-gray-700">ตั้งเป็นช่องทางหลัก</label>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={() => { setChannelModalOpen(false); setEditingChannelId(null); }}>ยกเลิก</button>
+                        <button type="submit" className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#0FA03A] disabled:opacity-50" disabled={savingChannel}>{savingChannel ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                      </div>
+                    </>
+                  )}
+                </form>
               )}
-            </form>
           </div>
         </div>
       )}

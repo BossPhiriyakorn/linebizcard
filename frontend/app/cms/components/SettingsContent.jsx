@@ -14,6 +14,8 @@ export default function SettingsContent() {
     qr_payment_account_no: '',
     qr_payment_account_name: '',
     qr_payment_qr_image_url: '',
+    privacy_policy_content: '',
+    terms_of_service_content: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,6 +40,8 @@ export default function SettingsContent() {
             qr_payment_account_no: data.data.qr_payment_account_no || '',
             qr_payment_account_name: data.data.qr_payment_account_name || '',
             qr_payment_qr_image_url: data.data.qr_payment_qr_image_url || '',
+            privacy_policy_content: data.data.privacy_policy_content ?? '',
+            terms_of_service_content: data.data.terms_of_service_content ?? '',
           });
         }
       })
@@ -60,6 +64,8 @@ export default function SettingsContent() {
         qr_payment_account_no: form.qr_payment_account_no.trim() || null,
         qr_payment_account_name: form.qr_payment_account_name.trim() || null,
         qr_payment_qr_image_url: form.qr_payment_qr_image_url.trim() || null,
+        privacy_policy_content: form.privacy_policy_content.trim() || null,
+        terms_of_service_content: form.terms_of_service_content.trim() || null,
       }),
     })
       .then((r) => {
@@ -197,6 +203,46 @@ export default function SettingsContent() {
                 onChange={(e) => setForm((f) => ({ ...f, login_bg_color: e.target.value }))}
               />
             </div>
+          </div>
+          <div className="mt-6">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-800 disabled:opacity-70"
+              onClick={save}
+              disabled={saving}
+            >
+              {saving ? 'กำลังบันทึก...' : 'บันทึกตั้งค่า'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* เนื้อหาสำหรับการยินยอม (ลูกค้าอ่านและติ๊กตอนลงทะเบียน) */}
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-200 px-5 py-4 font-semibold">ตั้งค่าเนื้อหาสำหรับการยินยอม (ลูกค้า)</div>
+        <div className="p-4 md:p-5">
+          <p className="mb-5 text-slate-500">
+            เนื้อหาต่อไปนี้จะแสดงบนหน้าลงทะเบียนของลูกค้า (LINE) — ลูกค้าต้องติ๊กยอมรับทั้งสองข้อก่อนกดบันทึก เพื่อความสอดคล้อง PDPA
+          </p>
+          <div className="mb-4">
+            <label className="mb-1.5 block font-medium text-gray-800">นโยบายความเป็นส่วนตัว (Privacy Policy)</label>
+            <textarea
+              rows={6}
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+              placeholder="กรอกเนื้อหานโยบายความเป็นส่วนตัวที่ลูกค้าต้องอ่านและยอมรับ..."
+              value={form.privacy_policy_content}
+              onChange={(e) => setForm((f) => ({ ...f, privacy_policy_content: e.target.value }))}
+            />
+          </div>
+          <div className="mb-4">
+            <label className="mb-1.5 block font-medium text-gray-800">ข้อกำหนดการใช้บริการ (Terms of Service)</label>
+            <textarea
+              rows={6}
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+              placeholder="กรอกเนื้อหาข้อกำหนดการใช้บริการที่ลูกค้าต้องอ่านและยอมรับ..."
+              value={form.terms_of_service_content}
+              onChange={(e) => setForm((f) => ({ ...f, terms_of_service_content: e.target.value }))}
+            />
           </div>
           <div className="mt-6">
             <button

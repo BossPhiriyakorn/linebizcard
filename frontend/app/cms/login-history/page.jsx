@@ -14,15 +14,25 @@ export default function LoginHistoryPage() {
     fetch('/api/cms/login-history', { headers: getCmsHeaders() })
       .then((r) => {
         if (handleCmsResponse(r)) return null;
-        return r.json();
+        return r.json().catch(() => null);
       })
       .then((data) => {
         setLoading(false);
-        if (!data) return;
-        if (data.success && Array.isArray(data.data)) setList(data.data);
-        else setAlert(data?.message || 'โหลดประวัติไม่สำเร็จ');
+        if (data === null) {
+          setAlert('โหลดประวัติไม่สำเร็จ (การเชื่อมต่อหรือรูปแบบข้อมูลผิดพลาด)');
+          return;
+        }
+        if (data.success === true && Array.isArray(data.data)) {
+          setList(data.data);
+        } else if (data.success === true && data.data != null && !Array.isArray(data.data)) {
+          setList([]);
+        } else {
+          setList([]);
+          setAlert(data?.message || 'โหลดประวัติไม่สำเร็จ');
+        }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('Login history fetch error:', err);
         setLoading(false);
         setAlert('โหลดประวัติไม่สำเร็จ');
       });
@@ -34,7 +44,7 @@ export default function LoginHistoryPage() {
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-800">{alert}</div>
       )}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-5 py-4 font-semibold">รายการเข้าใช้งาน CMS (ล่าสุด 500 รายการ)</div>
+        <div className="border-b border-gray-200 px-5 py-4 font-semibold">รายการเข้าใช้งาน CMS</div>
         <div className="overflow-x-auto p-4 md:p-5">
           {loading ? (
             <div className="py-12 text-center text-slate-500">

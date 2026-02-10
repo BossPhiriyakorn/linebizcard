@@ -1,17 +1,15 @@
 /**
- * การตั้งค่า Payment Gateway (สำหรับบัตรเครดิต/เดบิต ตัดเงินอัตโนมัติ)
+ * การตั้งค่า Payment Gateway — Stripe เท่านั้น (บัตรเครดิต/เดบิต ตัดเงินอัตโนมัติ)
  *
- * เมื่อเชื่อมต่อ Gateway จริง (เช่น Omise, 2C2P, Stripe) ให้:
- * 1. ใส่ค่าจาก Gateway ลงใน .env ตาม PAYMENT_GATEWAY_*
- * 2. แก้ไข services/paymentGatewayService.js ให้เรียก API จริงแทน stub
+ * เมื่อเชื่อมต่อ Stripe จริง:
+ * 1. ใส่ค่าจาก Stripe Dashboard ลงใน .env ตาม PAYMENT_GATEWAY_*
+ * 2. แก้ไข services/paymentGatewayService.js ให้เรียก Stripe API จริงแทน stub
  *
  * ตัวแปรใน .env ที่ใช้:
- * - PAYMENT_GATEWAY_ENABLED     = true | false (เปิดใช้ Gateway)
- * - PAYMENT_GATEWAY_PROVIDER   = omise | 2c2p | stripe | ... (ชื่อ provider)
- * - PAYMENT_GATEWAY_PUBLIC_KEY = คีย์สำหรับฝั่ง frontend (สร้าง token บัตร)
- * - PAYMENT_GATEWAY_SECRET_KEY = คีย์สำหรับฝั่ง backend (ยิง charge)
- * - PAYMENT_GATEWAY_MERCHANT_ID = (ถ้า provider ต้องการ)
- * - PAYMENT_GATEWAY_API_URL    = base URL ของ API (ถ้าไม่ใช้ default)
+ * - PAYMENT_GATEWAY_ENABLED     = true | false (เปิดใช้)
+ * - PAYMENT_GATEWAY_PUBLIC_KEY  = Stripe Publishable Key (pk_test_... / pk_live_...)
+ * - PAYMENT_GATEWAY_SECRET_KEY  = Stripe Secret Key (sk_test_... / sk_live_...)
+ * - PAYMENT_GATEWAY_WEBHOOK_SECRET = (ถ้าใช้ Webhook สำหรับ async events)
  */
 
 require('dotenv').config();
@@ -19,9 +17,10 @@ require('dotenv').config();
 const ENABLED = process.env.PAYMENT_GATEWAY_ENABLED === 'true' || process.env.PAYMENT_GATEWAY_ENABLED === '1';
 const PUBLIC_KEY = process.env.PAYMENT_GATEWAY_PUBLIC_KEY && String(process.env.PAYMENT_GATEWAY_PUBLIC_KEY).trim();
 const SECRET_KEY = process.env.PAYMENT_GATEWAY_SECRET_KEY && String(process.env.PAYMENT_GATEWAY_SECRET_KEY).trim();
-const PROVIDER = (process.env.PAYMENT_GATEWAY_PROVIDER && String(process.env.PAYMENT_GATEWAY_PROVIDER).trim()) || '';
-const MERCHANT_ID = process.env.PAYMENT_GATEWAY_MERCHANT_ID && String(process.env.PAYMENT_GATEWAY_MERCHANT_ID).trim();
-const API_URL = process.env.PAYMENT_GATEWAY_API_URL && String(process.env.PAYMENT_GATEWAY_API_URL).trim();
+const WEBHOOK_SECRET = process.env.PAYMENT_GATEWAY_WEBHOOK_SECRET && String(process.env.PAYMENT_GATEWAY_WEBHOOK_SECRET).trim();
+
+/** ใช้ Stripe เท่านั้น */
+const PROVIDER = 'stripe';
 
 /**
  * ตรวจสอบว่าได้ตั้งค่า Gateway พร้อมใช้งานหรือยัง
@@ -50,15 +49,11 @@ function getSecretKey() {
 }
 
 function getProvider() {
-  return PROVIDER || null;
+  return PROVIDER;
 }
 
-function getMerchantId() {
-  return MERCHANT_ID || null;
-}
-
-function getApiUrl() {
-  return API_URL || null;
+function getWebhookSecret() {
+  return WEBHOOK_SECRET || null;
 }
 
 module.exports = {
@@ -66,6 +61,5 @@ module.exports = {
   getPublicKey,
   getSecretKey,
   getProvider,
-  getMerchantId,
-  getApiUrl,
+  getWebhookSecret,
 };

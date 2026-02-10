@@ -1,6 +1,20 @@
 const pool = require('../config/database');
 const { couponAppliesToPackage } = require('./couponController');
 const { addCmsNotification } = require('../utils/cmsNotification');
+const paymentGatewayService = require('../services/paymentGatewayService');
+
+/** Idempotency cache สำหรับ choose-package: key = userId + ':' + idempotencyKey, value = { status, body, expiresAt } — ลดการตัดเงินซ้ำเมื่อกดซ้ำ */
+const idempotencyCache = new Map();
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 ชั่วโมง
+function getIdempotencyKey(req) {
+    return (req.headers && (req.headers['x-idempotency-key'] || req.headers['X-Idempotency-Key'])) || (req.body && req.body.idempotency_key) || null;
+}
+function pruneIdempotencyCache() {
+    const now = Date.now();
+    for (const [k, v] of idempotencyCache.entries()) {
+        if (v.expiresAt < now) idempotencyCache.delete(k);
+    }
+}
 
 /**
  * รายการแพ็กเกจที่เปิดใช้งาน (สำหรับหน้าเลือกแพ็กเกจหลังสมัคร)
@@ -31,6 +45,15 @@ async function choosePackage(req, res) {
         const userId = parseInt(req.user?.id, 10);
         if (isNaN(userId)) {
             return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบก่อนเลือกแพ็กเกจ' });
+        }
+        const idempotencyKey = getIdempotencyKey(req);
+        if (idempotencyKey && typeof idempotencyKey === 'string' && idempotencyKey.length > 0) {
+            pruneIdempotencyCache();
+            const cacheKey = userId + ':' + idempotencyKey.trim();
+            const cached = idempotencyCache.get(cacheKey);
+            if (cached && cached.status === 200) {
+                return res.status(200).json(cached.body);
+            }
         }
         const { package_id, coupon_code, payment_channel_id } = req.body || {};
         const pkgId = parseInt(String(package_id), 10);
@@ -165,6 +188,34 @@ async function choosePackage(req, res) {
             return;
         }
 
+        let stripeTransactionId = null;
+        if (requiresPayment && channel && (channel.channel_type === 'credit_card' || channel.channel_type === 'debit_card')) {
+            const amountSatang = Math.round(parseFloat(amount) * 100);
+            const intentMetadata = {
+                package_id: pkgId,
+                duration_days: durationDays,
+                ...(couponApplied && { coupon_id: couponApplied.coupon_id, extra_days: couponApplied.extra_days }),
+            };
+            const chargeResult = await paymentGatewayService.chargeSavedCard(
+                userId,
+                channelId,
+                amountSatang,
+                'แพ็กเกจ ' + (pkg.name || ''),
+                intentMetadata
+            );
+            if (!chargeResult.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: chargeResult.message || 'ตัดเงินไม่สำเร็จ',
+                    code: chargeResult.requires_action ? 'REQUIRES_ACTION' : 'PAYMENT_FAILED',
+                    requires_action: chargeResult.requires_action || false,
+                    client_secret: chargeResult.client_secret || undefined,
+                    payment_intent_id: chargeResult.payment_intent_id || undefined,
+                });
+            }
+            if (chargeResult.transaction_id) stripeTransactionId = chargeResult.transaction_id;
+        }
+
         const startDate = new Date();
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + durationDays);
@@ -195,9 +246,9 @@ async function choosePackage(req, res) {
         }
 
         await pool.query(
-            `INSERT INTO payment_history (user_id, package_id, amount, paid_at, membership_id, payment_type) 
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [userId, pkgId, amount, startDate, membershipId, paymentType]
+            `INSERT INTO payment_history (user_id, package_id, amount, paid_at, membership_id, payment_type, transaction_id) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [userId, pkgId, amount, startDate, membershipId, paymentType, stripeTransactionId || null]
         );
 
         if (couponApplied) {
@@ -219,7 +270,7 @@ async function choosePackage(req, res) {
             related_user_id: userId
         }).catch(() => {});
 
-        res.json({
+        const successBody = {
             success: true,
             message: existing.rows.length > 0 ? 'เปลี่ยนแพ็กเกจสำเร็จ' : 'เลือกแพ็กเกจสำเร็จ',
             data: {
@@ -228,7 +279,16 @@ async function choosePackage(req, res) {
                 end_date: endDate,
                 coupon_applied: couponApplied ? { extra_days: couponApplied.extra_days, discount_percent: couponApplied.discount_percent } : null
             }
-        });
+        };
+        if (idempotencyKey && typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0) {
+            const cacheKey = userId + ':' + idempotencyKey.trim();
+            idempotencyCache.set(cacheKey, {
+                status: 200,
+                body: successBody,
+                expiresAt: Date.now() + IDEMPOTENCY_TTL_MS
+            });
+        }
+        res.json(successBody);
     } catch (err) {
         console.error('Choose package error:', err);
         res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด') });
@@ -374,9 +434,115 @@ async function createPendingPayment(req, res) {
     }
 }
 
+/**
+ * ยืนยันการชำระหลังผู้ใช้ทำ 3D Secure ครบ — เรียกจาก frontend หลัง stripe.confirmCardPayment(client_secret) สำเร็จ
+ * POST body: { payment_intent_id }
+ */
+async function confirmPaymentAfter3ds(req, res) {
+    try {
+        const userId = parseInt(req.user?.id, 10);
+        if (isNaN(userId)) return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบ' });
+        const { payment_intent_id } = req.body || {};
+        if (!payment_intent_id || typeof payment_intent_id !== 'string') {
+            return res.status(400).json({ success: false, message: 'กรุณาส่ง payment_intent_id' });
+        }
+        const retrieved = await paymentGatewayService.retrievePaymentIntent(payment_intent_id);
+        if (!retrieved.success || !retrieved.payment_intent) {
+            return res.status(400).json({ success: false, message: retrieved.message || 'ดึงข้อมูลการชำระไม่สำเร็จ' });
+        }
+        const pi = retrieved.payment_intent;
+        if (pi.status !== 'succeeded') {
+            return res.status(400).json({ success: false, message: 'การชำระยังไม่สำเร็จ กรุณาทำ 3D Secure ให้ครบ' });
+        }
+        const meta = pi.metadata || {};
+        if (String(meta.user_id) !== String(userId)) {
+            return res.status(403).json({ success: false, message: 'การชำระนี้ไม่ตรงกับบัญชีของคุณ' });
+        }
+        const pkgId = meta.package_id != null ? parseInt(meta.package_id, 10) : null;
+        if (!pkgId || isNaN(pkgId)) {
+            return res.status(400).json({ success: false, message: 'ข้อมูลแพ็กเกจไม่ครบ' });
+        }
+        const existingByTx = await pool.query(
+            'SELECT id FROM payment_history WHERE transaction_id = $1 LIMIT 1',
+            [pi.id]
+        );
+        if (existingByTx.rows.length > 0) {
+            return res.json({ success: true, message: 'ยืนยันการชำระแล้ว', data: { already_completed: true } });
+        }
+        const pkgResult = await pool.query(
+            'SELECT id, name, duration_days FROM packages WHERE id = $1 AND COALESCE(is_active, true) = true',
+            [pkgId]
+        );
+        if (pkgResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
+        }
+        const pkg = pkgResult.rows[0];
+        let durationDays = parseInt(meta.duration_days, 10) || parseInt(pkg.duration_days, 10) || 0;
+        const extraDays = meta.extra_days != null ? parseInt(meta.extra_days, 10) : 0;
+        if (!isNaN(extraDays) && extraDays > 0) durationDays += extraDays;
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + durationDays);
+        const amount = 0;
+        let membershipId = null;
+        const existing = await pool.query(
+            'SELECT id FROM memberships WHERE user_id = $1 AND status = \'active\' LIMIT 1',
+            [userId]
+        );
+        const paymentType = existing.rows.length > 0 ? 'renew' : 'purchase';
+        if (existing.rows.length > 0) {
+            membershipId = existing.rows[0].id;
+            await pool.query(
+                `UPDATE memberships SET membership_type = $1, start_date = $2, end_date = $3, package_id = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`,
+                [pkg.name, startDate, endDate, pkgId, membershipId]
+            );
+        } else {
+            const insertResult = await pool.query(
+                `INSERT INTO memberships (user_id, membership_type, start_date, end_date, status, package_id) VALUES ($1, $2, $3, $4, 'active', $5) RETURNING id`,
+                [userId, pkg.name, startDate, endDate, pkgId]
+            );
+            if (insertResult.rows.length > 0) membershipId = insertResult.rows[0].id;
+        }
+        await pool.query(
+            `INSERT INTO payment_history (user_id, package_id, amount, paid_at, membership_id, payment_type, transaction_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [userId, pkgId, amount, startDate, membershipId, paymentType, pi.id]
+        );
+        const couponId = meta.coupon_id != null ? parseInt(meta.coupon_id, 10) : null;
+        if (couponId && !isNaN(couponId)) {
+            const alreadyRedeemed = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [couponId, userId]);
+            if (alreadyRedeemed.rows.length === 0) {
+                await pool.query(
+                    'INSERT INTO coupon_redemptions (coupon_id, user_id, package_id) VALUES ($1, $2, $3)',
+                    [couponId, userId, pkgId]
+                ).catch(() => {});
+                await pool.query(
+                    'UPDATE coupons SET use_count = COALESCE(use_count, 0) + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+                    [couponId]
+                ).catch(() => {});
+            }
+        }
+        addCmsNotification(pool, {
+            notification_type: 'payment_done',
+            title: 'ลูกค้าชำระเงิน (3DS)',
+            message: `ลูกค้าเลือกแพ็กเกจ ${pkg.name} (User ID: ${userId})`,
+            link_url: `/cms/users/${userId}`,
+            related_user_id: userId
+        }).catch(() => {});
+        res.json({
+            success: true,
+            message: 'ยืนยันการชำระสำเร็จ',
+            data: { package_name: pkg.name, start_date: startDate, end_date: endDate }
+        });
+    } catch (err) {
+        console.error('confirmPaymentAfter3ds error:', err);
+        res.status(500).json({ success: false, message: 'ดำเนินการไม่สำเร็จ' });
+    }
+}
+
 module.exports = {
     getActivePackages,
     choosePackage,
     validateCoupon,
-    createPendingPayment
+    createPendingPayment,
+    confirmPaymentAfter3ds
 };

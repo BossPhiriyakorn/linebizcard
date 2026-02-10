@@ -10,3 +10,26 @@ export function getToken() {
 export function getHeaders() {
   return { Authorization: 'Bearer ' + (getToken() || '') };
 }
+
+/**
+ * ลบ token ลูกค้าและ redirect ไปหน้าเข้าสู่ระบบ (LINE/LIFF)
+ * ใช้เมื่อได้ 401/403 จาก API ลูกค้า — ลูกค้าเข้าใช้งานผ่าน LINE จึงพาไป /liff/login
+ */
+export function clearTokenAndRedirectToLogin() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('token');
+  window.location.href = '/liff/login';
+}
+
+/**
+ * ตรวจสอบ response จาก API ลูกค้า: ถ้า 401/403 ให้ลบ token และ redirect ไป /liff/login
+ * @param {Response} r - response จาก fetch
+ * @returns {boolean} true ถ้า redirect แล้ว (caller ไม่ต้องทำอะไรต่อ), false ถ้าไม่ใช่ 401/403
+ */
+export function handleAuthResponse(r) {
+  if (r && (r.status === 401 || r.status === 403)) {
+    clearTokenAndRedirectToLogin();
+    return true;
+  }
+  return false;
+}

@@ -5,12 +5,10 @@ const lineAuthController = require('../controllers/lineAuthController');
 const emailVerificationController = require('../controllers/emailVerificationController');
 const { rateLimitLogin, rateLimitOTPRequest, rateLimitOTPVerify } = require('../middleware/rateLimit');
 
-// Email/Password Authentication (rate limit ป้องกัน brute force)
-router.post('/register', authController.register);
-router.post('/login', rateLimitLogin, authController.login);
+// ลูกค้าเข้าใช้งานผ่าน LINE เท่านั้น — ไม่มีอีเมล/พาสเวิร์ด
 router.post('/logout', authController.logout);
 
-// Email Verification (OTP)
+// Email Verification (OTP) — ใช้กับลูกค้า LINE ที่มีอีเมล (ยืนยันอีเมล)
 router.post('/send-otp', rateLimitOTPRequest, emailVerificationController.sendOTP);
 router.post('/verify-otp', rateLimitOTPVerify, emailVerificationController.verifyOTP);
 router.get('/verification-status', emailVerificationController.getVerificationStatus);
