@@ -641,8 +641,18 @@ async function getUserPaymentHistory(req, res) {
             return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
         }
         const result = await pool.query(
-            `SELECT ph.id, ph.user_id, ph.package_id, ph.amount, ph.original_amount, ph.discount_amount, ph.extra_days, ph.paid_at, ph.payment_type, ph.created_at,
-              p.name AS package_name
+            `SELECT ph.id, ph.user_id, ph.package_id, ph.amount,
+              COALESCE(ph.original_amount, p.price, ph.amount + COALESCE(ph.discount_amount, 0)) AS original_amount,
+              COALESCE(ph.discount_amount, 0) AS discount_amount,
+              ph.extra_days, ph.paid_at, ph.payment_type, ph.created_at,
+              p.name AS package_name,
+              (CASE
+                WHEN COALESCE(ph.discount_amount, 0) > 0 AND (COALESCE(ph.original_amount, p.price, ph.amount + COALESCE(ph.discount_amount, 0)) > 0)
+                THEN ROUND((COALESCE(ph.discount_amount, 0)::numeric / NULLIF(COALESCE(ph.original_amount, p.price, ph.amount + COALESCE(ph.discount_amount, 0)), 0)) * 100, 0)
+                WHEN (COALESCE(ph.original_amount, p.price) IS NOT NULL AND (COALESCE(ph.original_amount, p.price) > ph.amount) AND COALESCE(ph.original_amount, p.price) > 0)
+                THEN ROUND(((COALESCE(ph.original_amount, p.price) - ph.amount)::numeric / NULLIF(COALESCE(ph.original_amount, p.price), 0)) * 100, 0)
+                ELSE NULL
+              END)::integer AS discount_percent
              FROM payment_history ph
              LEFT JOIN packages p ON p.id = ph.package_id
              WHERE ph.user_id = $1

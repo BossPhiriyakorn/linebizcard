@@ -191,6 +191,8 @@ async function choosePackage(req, res) {
             const intentMetadata = {
                 package_id: pkgId,
                 duration_days: durationDays,
+                original_amount: String(originalAmount),
+                discount_amount: String(discountAmount),
                 ...(couponApplied && { coupon_id: couponApplied.coupon_id, extra_days: couponApplied.extra_days }),
             };
             const chargeResult = await paymentGatewayService.chargeSavedCard(
@@ -243,9 +245,9 @@ async function choosePackage(req, res) {
         }
 
         await pool.query(
-            `INSERT INTO payment_history (user_id, package_id, amount, paid_at, membership_id, payment_type, transaction_id) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [userId, pkgId, amount, startDate, membershipId, paymentType, stripeTransactionId || null]
+            `INSERT INTO payment_history (user_id, package_id, amount, original_amount, discount_amount, paid_at, membership_id, payment_type, transaction_id) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [userId, pkgId, amount, originalAmount, discountAmount, startDate, membershipId, paymentType, stripeTransactionId || null]
         );
 
         if (couponApplied) {
@@ -486,7 +488,9 @@ async function confirmPaymentAfter3ds(req, res) {
         const startDate = new Date();
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + durationDays);
-        const amount = 0;
+        const amount = (pi.amount != null ? Number(pi.amount) : 0) / 100;
+        const originalAmount = meta.original_amount != null && meta.original_amount !== '' ? parseFloat(meta.original_amount) : null;
+        const discountAmount = meta.discount_amount != null && meta.discount_amount !== '' ? parseFloat(meta.discount_amount) : null;
         let membershipId = null;
         const existing = await pool.query(
             'SELECT id FROM memberships WHERE user_id = $1 AND status = \'active\' LIMIT 1',
@@ -507,8 +511,8 @@ async function confirmPaymentAfter3ds(req, res) {
             if (insertResult.rows.length > 0) membershipId = insertResult.rows[0].id;
         }
         await pool.query(
-            `INSERT INTO payment_history (user_id, package_id, amount, paid_at, membership_id, payment_type, transaction_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [userId, pkgId, amount, startDate, membershipId, paymentType, pi.id]
+            `INSERT INTO payment_history (user_id, package_id, amount, original_amount, discount_amount, paid_at, membership_id, payment_type, transaction_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [userId, pkgId, amount, originalAmount, discountAmount, startDate, membershipId, paymentType, pi.id]
         );
         const couponId = meta.coupon_id != null ? parseInt(meta.coupon_id, 10) : null;
         if (couponId && !isNaN(couponId)) {

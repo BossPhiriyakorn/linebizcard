@@ -505,6 +505,7 @@ export default function UserDetailPage() {
                   <tr>
                     <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">วันที่</th>
                     <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">แพ็กเกจ</th>
+                    <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาแพ็กเกจ (บาท)</th>
                     <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาจริง (บาท)</th>
                     <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ส่วนลด</th>
                     <th className="border-b border-gray-200 bg-amber-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">สลิป</th>
@@ -516,9 +517,10 @@ export default function UserDetailPage() {
                     <tr key={pp.id} className="hover:bg-amber-50/50">
                       <td className="border-b border-gray-200 px-3 py-2 text-sm">{pp.created_at ? new Date(pp.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
                       <td className="border-b border-gray-200 px-3 py-2">{pp.package_name || '-'}</td>
+                      <td className="border-b border-gray-200 px-3 py-2 text-right">{pp.original_amount != null ? Number(pp.original_amount).toLocaleString() : (pp.amount != null && pp.discount_amount != null ? Number(Number(pp.amount) + Number(pp.discount_amount)).toLocaleString() : '-')}</td>
                       <td className="border-b border-gray-200 px-3 py-2 text-right">{pp.amount != null ? Number(pp.amount).toLocaleString() : '0'}</td>
                       <td className="border-b border-gray-200 px-3 py-2 text-right text-sm">
-                        {pp.extra_days != null && Number(pp.extra_days) > 0 ? `+${pp.extra_days} วัน` : (pp.discount_amount != null && Number(pp.discount_amount) > 0 ? Number(pp.discount_amount).toLocaleString() + ' บาท' : '-')}
+                        {pp.extra_days != null && Number(pp.extra_days) > 0 ? `+${pp.extra_days} วัน` : (pp.discount_amount != null && Number(pp.discount_amount) > 0 && pp.original_amount != null && Number(pp.original_amount) > 0 ? `${Math.round((Number(pp.discount_amount) / Number(pp.original_amount)) * 100)}%` : (pp.discount_amount != null && Number(pp.discount_amount) > 0 ? Number(pp.discount_amount).toLocaleString() + ' บาท' : '-'))}
                       </td>
                       <td className="border-b border-gray-200 px-3 py-2">
                         {pp.slip_image_url ? (
@@ -551,6 +553,7 @@ export default function UserDetailPage() {
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">แพ็กเกจ / รายการ</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">ประเภท</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">สถานะ</th>
+                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาแพ็กเกจ (บาท)</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาจริง (บาท)</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ส่วนลด</th>
                 </tr>
@@ -567,6 +570,7 @@ export default function UserDetailPage() {
                     <td className="border-b border-gray-200 px-3 py-2">
                       <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">รอชำระ</span>
                     </td>
+                    <td className="border-b border-gray-200 px-3 py-2 text-right">-</td>
                     <td className="border-b border-gray-200 px-3 py-2 text-right">-</td>
                     <td className="border-b border-gray-200 px-3 py-2 text-right text-sm">
                       {savedCouponNext.discount_percent != null ? `จะได้ ${savedCouponNext.discount_percent}% (เพิ่มวัน)` : '-'}
@@ -586,9 +590,23 @@ export default function UserDetailPage() {
                     <td className="border-b border-gray-200 px-3 py-2">
                       <span className="inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">ชำระแล้ว</span>
                     </td>
+                    <td className="border-b border-gray-200 px-3 py-2 text-right">
+                      {(row.original_amount != null && row.original_amount !== '') ? Number(row.original_amount).toLocaleString() : (row.amount != null && (row.discount_amount != null && Number(row.discount_amount) > 0) ? (Number(row.amount) + Number(row.discount_amount)).toLocaleString() : '-')}
+                    </td>
                     <td className="border-b border-gray-200 px-3 py-2 text-right">{row.amount != null ? Number(row.amount).toLocaleString() : '0'}</td>
                     <td className="border-b border-gray-200 px-3 py-2 text-right text-sm">
-                      {row.extra_days != null && Number(row.extra_days) > 0 ? `+${row.extra_days} วัน` : (row.discount_amount != null && Number(row.discount_amount) > 0 ? Number(row.discount_amount).toLocaleString() + ' บาท' : '-')}
+                      {row.extra_days != null && Number(row.extra_days) > 0
+                        ? `+${row.extra_days} วัน`
+                        : (() => {
+                            const percent = row.discount_percent != null && row.discount_percent !== '' ? Number(row.discount_percent) : null;
+                            if (percent != null && percent > 0) return `${percent}%`;
+                            const disc = Number(row.discount_amount);
+                            const orig = Number(row.original_amount) || (row.amount != null && disc > 0 ? Number(row.amount) + disc : 0);
+                            if (disc > 0 && orig > 0) return `${Math.round((disc / orig) * 100)}%`;
+                            if (disc > 0) return Number(disc).toLocaleString() + ' บาท';
+                            if (orig > 0 && row.amount != null && Number(row.amount) < orig) return `${Math.round(((orig - Number(row.amount)) / orig) * 100)}%`;
+                            return '-';
+                          })()}
                     </td>
                   </tr>
                 ))}

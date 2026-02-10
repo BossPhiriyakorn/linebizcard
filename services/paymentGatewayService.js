@@ -112,6 +112,8 @@ async function chargeSavedCard(userId, paymentChannelId, amountSatang, descripti
     payment_channel_id: String(paymentChannelId),
     ...(intentMetadata.package_id != null && { package_id: String(intentMetadata.package_id) }),
     ...(intentMetadata.duration_days != null && { duration_days: String(intentMetadata.duration_days) }),
+    ...(intentMetadata.original_amount != null && { original_amount: String(intentMetadata.original_amount) }),
+    ...(intentMetadata.discount_amount != null && { discount_amount: String(intentMetadata.discount_amount) }),
     ...(intentMetadata.coupon_id != null && { coupon_id: String(intentMetadata.coupon_id) }),
     ...(intentMetadata.extra_days != null && { extra_days: String(intentMetadata.extra_days) }),
   };
