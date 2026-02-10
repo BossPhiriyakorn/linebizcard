@@ -64,6 +64,7 @@ router.post('/payment-channels', rateLimitPaymentChannels, authenticateToken, re
 router.put('/payment-channels/:id', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.updateChannel);
 router.delete('/payment-channels/:id', rateLimitPaymentChannels, authenticateToken, requireActiveUser, paymentChannelController.deleteChannel);
 
+router.get('/user/payment-history', authenticateToken, requireActiveUser, packageController.getMyPaymentHistory);
 router.get('/payment-requests/:id', authenticateToken, requireActiveUser, pendingPaymentController.getPaymentRequest);
 router.post('/payment-requests/:id/upload-slip', authenticateToken, requireActiveUser, uploadSlip, handleUploadError, pendingPaymentController.uploadSlip);
 

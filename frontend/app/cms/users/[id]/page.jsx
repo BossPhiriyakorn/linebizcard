@@ -551,7 +551,6 @@ export default function UserDetailPage() {
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">ลำดับ</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">วันที่</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">แพ็กเกจ / รายการ</th>
-                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">ประเภท</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">สถานะ</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาแพ็กเกจ (บาท)</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">ราคาจริง (บาท)</th>
@@ -566,7 +565,6 @@ export default function UserDetailPage() {
                       {savedCouponNext.created_at ? new Date(savedCouponNext.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </td>
                     <td className="border-b border-gray-200 px-3 py-2">{savedCouponNext.name || savedCouponNext.code || 'คูปองส่วนลดเดือนถัดไป'}</td>
-                    <td className="border-b border-gray-200 px-3 py-2">คูปองใช้รอบตัดอัตโนมัติ</td>
                     <td className="border-b border-gray-200 px-3 py-2">
                       <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">รอชำระ</span>
                     </td>
@@ -584,9 +582,6 @@ export default function UserDetailPage() {
                       {row.paid_at ? new Date(row.paid_at).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </td>
                     <td className="border-b border-gray-200 px-3 py-2">{row.package_name || '-'}</td>
-                    <td className="border-b border-gray-200 px-3 py-2">
-                      {row.payment_type === 'renew' ? 'ต่อแพ็กเกจ' : 'ซื้อแพ็กเกจ'}
-                    </td>
                     <td className="border-b border-gray-200 px-3 py-2">
                       <span className="inline-block rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">ชำระแล้ว</span>
                     </td>
