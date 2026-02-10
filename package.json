@@ -8,6 +8,7 @@
     "dev": "cross-env NODE_OPTIONS=--no-deprecation nodemon server.js",
     "install:all": "npm install && cd frontend && npm install",
     "build": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 npm run build",
+    "build:clean": "node scripts/clean-build.js",
     "build:frontend": "cd frontend && npm run build"
   },
   "dependencies": {

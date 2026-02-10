@@ -150,9 +150,9 @@ async function choosePackage(req, res) {
                             couponRejectReason = 'คุณใช้คูปองนี้ไปแล้ว';
                         } else {
                             const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));
-                            const extraDays = Math.floor((durationDays * pct) / 100);
-                            durationDays += extraDays;
-                            couponApplied = { coupon_id: coupon.id, extra_days: extraDays, discount_percent: pct };
+                            const price = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
+                            const discountAmountBaht = Math.round(price * (pct / 100) * 100) / 100;
+                            couponApplied = { coupon_id: coupon.id, extra_days: 0, discount_percent: pct, discount_amount_baht: discountAmountBaht };
                         }
                     }
                 }
@@ -163,14 +163,16 @@ async function choosePackage(req, res) {
             return res.status(400).json({ success: false, message: couponRejectReason, code: 'COUPON_NOT_APPLICABLE' });
         }
 
-        const amount = requiresPayment
+        const originalAmount = requiresPayment
             ? (parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0)
             : 0;
+        const discountAmount = couponApplied && couponApplied.discount_amount_baht != null ? couponApplied.discount_amount_baht : 0;
+        const amount = Math.max(0, originalAmount - discountAmount);
 
         if (requiresPayment && channel && channel.channel_type === 'qr_self') {
             const ins = await pool.query(
-                `INSERT INTO pending_payments (user_id, package_id, payment_channel_id, amount, status) VALUES ($1, $2, $3, $4, 'pending') RETURNING id`,
-                [userId, pkgId, channelId, amount]
+                `INSERT INTO pending_payments (user_id, package_id, payment_channel_id, amount, original_amount, discount_amount, coupon_id, extra_days, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending') RETURNING id`,
+                [userId, pkgId, channelId, amount, originalAmount, discountAmount, couponApplied ? couponApplied.coupon_id : null, couponApplied ? (couponApplied.extra_days || 0) : null]
             );
             const pendingId = ins.rows[0].id;
             const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || '';
@@ -307,14 +309,14 @@ async function validateCoupon(req, res) {
         const pkgId = parseInt(String(package_id), 10);
         if (!package_id || isNaN(pkgId)) return res.status(400).json({ success: false, message: 'กรุณาเลือกแพ็กเกจ' });
         const pkgResult = await pool.query(
-            'SELECT id, name, duration_days, period_type FROM packages WHERE id = $1 AND COALESCE(is_active, true) = true',
+            'SELECT id, name, duration_days, period_type, COALESCE(price, 0) AS price FROM packages WHERE id = $1 AND COALESCE(is_active, true) = true',
             [pkgId]
         );
         if (pkgResult.rows.length === 0) return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
         const pkg = pkgResult.rows[0];
-        const durationDays = parseInt(pkg.duration_days, 10) || 0;
+        const price = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
         if (!coupon_code || !String(coupon_code).trim()) {
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: null } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: null } });
         }
         const code = String(coupon_code).trim().toUpperCase();
         const couponResult = await pool.query(
@@ -323,7 +325,7 @@ async function validateCoupon(req, res) {
             [code]
         );
         if (couponResult.rows.length === 0) {
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: 'รหัสคูปองไม่ถูกต้องหรือหมดอายุ' } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'รหัสคูปองไม่ถูกต้องหรือหมดอายุ' } });
         }
         const coupon = couponResult.rows[0];
         const now = new Date();
@@ -331,27 +333,28 @@ async function validateCoupon(req, res) {
             (coupon.valid_from && new Date(coupon.valid_from) > now) ||
             (coupon.valid_until && new Date(coupon.valid_until) < now) ||
             (coupon.max_uses != null && (coupon.use_count || 0) >= coupon.max_uses)) {
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: 'รหัสคูปองไม่สามารถใช้ได้ในขณะนี้' } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'รหัสคูปองไม่สามารถใช้ได้ในขณะนี้' } });
         }
         const pkgPeriod = (pkg.period_type || '').toLowerCase();
         const couponCondition = (coupon.condition_type || '').toLowerCase();
         const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
         if (!appliesToPackage) {
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก' } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก' } });
         }
         if (!pkgPeriod || !couponCondition || pkgPeriod !== couponCondition) {
             const msg = couponCondition === 'annual' ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจรายปี' : couponCondition === '3months' ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ 3 เดือน' : 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: msg } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: msg } });
         }
         const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
         if (already.rows.length > 0) {
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, message: 'คุณใช้คูปองนี้ไปแล้ว' } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'คุณใช้คูปองนี้ไปแล้ว' } });
         }
         const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));
-        const extraDays = Math.floor((durationDays * pct) / 100);
+        const discountAmountBaht = Math.round(price * (pct / 100) * 100) / 100;
+        const finalAmount = Math.max(0, price - discountAmountBaht);
         return res.json({
             success: true,
-            data: { valid: true, extra_days: extraDays, discount_percent: pct, coupon_id: coupon.id, message: null }
+            data: { valid: true, extra_days: 0, discount_percent: pct, discount_amount_baht: discountAmountBaht, final_amount: finalAmount, coupon_id: coupon.id, message: null }
         });
     } catch (err) {
         console.error('validateCoupon error:', err);
@@ -376,9 +379,10 @@ async function createPendingPayment(req, res) {
         );
         if (pkgResult.rows.length === 0) return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
         const pkg = pkgResult.rows[0];
-        const amount = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
+        let originalAmount = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
         let couponId = null;
         let extraDays = null;
+        let discountAmount = 0;
         if (coupon_code && String(coupon_code).trim()) {
             const code = String(coupon_code).trim().toUpperCase();
             const couponResult = await pool.query(
@@ -389,7 +393,6 @@ async function createPendingPayment(req, res) {
             if (couponResult.rows.length > 0) {
                 const coupon = couponResult.rows[0];
                 const now = new Date();
-                const durationDays = parseInt(pkg.duration_days, 10) || 0;
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
                 const couponCondition = (coupon.condition_type || '').toLowerCase();
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
@@ -401,12 +404,14 @@ async function createPendingPayment(req, res) {
                     const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
                     if (already.rows.length === 0) {
                         const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));
-                        extraDays = Math.floor((durationDays * pct) / 100);
+                        discountAmount = Math.round(originalAmount * (pct / 100) * 100) / 100;
                         couponId = coupon.id;
+                        extraDays = 0;
                     }
                 }
             }
         }
+        const amount = Math.max(0, originalAmount - discountAmount);
         const qrChannel = await pool.query(
             "SELECT id FROM payment_channels WHERE user_id = $1 AND channel_type = 'qr_self' ORDER BY id ASC LIMIT 1",
             [userId]
@@ -415,8 +420,6 @@ async function createPendingPayment(req, res) {
             return res.status(400).json({ success: false, message: 'กรุณาลงทะเบียนช่องทางการชำระเงิน (QR) ก่อน ที่หน้าโปรไฟล์' });
         }
         const channelId = qrChannel.rows[0].id;
-        const originalAmount = amount;
-        const discountAmount = 0;
         const ins = await pool.query(
             `INSERT INTO pending_payments (user_id, package_id, payment_channel_id, amount, original_amount, discount_amount, coupon_id, extra_days, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending') RETURNING id`,

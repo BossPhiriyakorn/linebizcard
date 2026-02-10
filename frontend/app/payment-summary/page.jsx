@@ -76,8 +76,18 @@ function PaymentSummaryContent() {
         if (data == null) return;
         if (data.success && data.data) {
           if (data.data.valid) {
-            setCouponResult({ valid: true, extra_days: data.data.extra_days, discount_percent: data.data.discount_percent });
-            setAlert({ show: true, msg: `ใช้คูปองได้ ส่วนลด: เพิ่ม ${data.data.extra_days} วัน`, type: 'success' });
+            setCouponResult({
+              valid: true,
+              extra_days: data.data.extra_days ?? 0,
+              discount_percent: data.data.discount_percent ?? 0,
+              discount_amount_baht: data.data.discount_amount_baht ?? 0,
+              final_amount: data.data.final_amount,
+            });
+            const discountBaht = data.data.discount_amount_baht ?? 0;
+            const msg = discountBaht > 0
+              ? `ใช้คูปองได้ ส่วนลด ${discountBaht} บาท (${data.data.discount_percent ?? 0}%)`
+              : `ใช้คูปองได้`;
+            setAlert({ show: true, msg, type: 'success' });
           } else {
             setCouponResult({ valid: false });
             setAlert({ show: true, msg: data.data.message || 'คูปองใช้กับแพ็กเกจนี้ไม่ได้', type: 'error' });
@@ -202,10 +212,14 @@ function PaymentSummaryContent() {
   }
 
   const price = packageItem.price != null && !isNaN(Number(packageItem.price)) ? Number(packageItem.price) : 0;
-  const discountDisplay = couponResult?.valid && couponResult.extra_days
-    ? `+${couponResult.extra_days} วัน`
-    : '0 บาท';
-  const finalAmount = price;
+  const discountDisplay = couponResult?.valid && (couponResult.discount_amount_baht ?? 0) > 0
+    ? `-${(couponResult.discount_amount_baht ?? 0).toLocaleString()} บาท`
+    : couponResult?.valid && (couponResult.extra_days ?? 0) > 0
+      ? `+${couponResult.extra_days} วัน`
+      : '0 บาท';
+  const finalAmount = couponResult?.valid && couponResult.final_amount != null && !isNaN(Number(couponResult.final_amount))
+    ? Number(couponResult.final_amount)
+    : price;
 
   return (
     <div className="min-h-screen">

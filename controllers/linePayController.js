@@ -45,12 +45,10 @@ async function reserve(req, res) {
             return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
         }
         const pkg = pkgResult.rows[0];
-        const amount = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
-        if (amount <= 0) {
-            return res.status(400).json({ success: false, message: 'แพ็กเกจนี้ไม่ต้องชำระด้วย LINE Pay' });
-        }
+        let originalAmount = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
         let couponId = null;
         let extraDays = null;
+        let discountAmount = 0;
         if (coupon_code && String(coupon_code).trim()) {
             const code = String(coupon_code).trim().toUpperCase();
             const couponResult = await pool.query(
@@ -61,7 +59,6 @@ async function reserve(req, res) {
             if (couponResult.rows.length > 0) {
                 const coupon = couponResult.rows[0];
                 const now = new Date();
-                const durationDays = parseInt(pkg.duration_days, 10) || 0;
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
                 const couponCondition = (coupon.condition_type || '').toLowerCase();
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
@@ -82,11 +79,19 @@ async function reserve(req, res) {
                     );
                     if (already.rows.length === 0) {
                         const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));
-                        extraDays = Math.floor((durationDays * pct) / 100);
+                        discountAmount = Math.round(originalAmount * (pct / 100) * 100) / 100;
                         couponId = coupon.id;
+                        extraDays = 0;
                     }
                 }
             }
+        }
+        const amount = Math.max(0, originalAmount - discountAmount);
+        if (amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: originalAmount > 0 ? 'หลังใช้คูปองราคาเป็น 0 บาท ไม่สามารถชำระด้วย LINE Pay ได้' : 'แพ็กเกจนี้ไม่ต้องชำระด้วย LINE Pay',
+            });
         }
         const orderId = generateOrderId(userId);
         const confirmUrl = linePayConfig.getConfirmUrl();
@@ -105,8 +110,6 @@ async function reserve(req, res) {
                 code: reserveResult.code || 'NOT_IMPLEMENTED',
             });
         }
-        const originalAmount = amount;
-        const discountAmount = 0;
         await pool.query(
             `INSERT INTO pending_payments (user_id, package_id, payment_channel_id, amount, original_amount, discount_amount, coupon_id, extra_days, status, line_pay_order_id, line_pay_transaction_id)
              VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, 'pending', $8, $9)`,
