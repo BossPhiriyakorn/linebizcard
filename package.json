@@ -6,7 +6,8 @@
   "scripts": {
     "start": "cross-env NODE_OPTIONS=--no-deprecation node server.js",
     "dev": "cross-env NODE_OPTIONS=--no-deprecation nodemon server.js",
-    "build": "cd frontend && npm install && npm run build",
+    "install:all": "npm install && cd frontend && npm install",
+    "build": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 npm run build",
     "build:frontend": "cd frontend && npm run build"
   },
   "dependencies": {

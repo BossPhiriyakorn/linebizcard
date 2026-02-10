@@ -94,6 +94,22 @@ npm run dev
 
 หรือ Production: `npm start`
 
+### Build (Production) — เซิร์ฟเวอร์หรือเครื่อง RAM น้อย
+
+ติดตั้ง dependencies ทั้ง root และ frontend **ครั้งเดียว** (ไม่รันในคำสั่ง build):
+
+```bash
+npm run install:all
+```
+
+จากนั้นรัน build (ใช้ memory 2GB เพื่อลดโอกาสค้างตอน "Creating an optimized production build"):
+
+```bash
+npm run build
+```
+
+หลัง build สำเร็จ รัน `npm run start` ได้เลย
+
 Frontend (Next.js) — แยกโฟลเดอร์ `frontend/`:
 
 ```bash
