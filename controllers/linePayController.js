@@ -62,6 +62,7 @@ async function reserve(req, res) {
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
                 const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
+                const periodOk = allowedConditions.length === 0 || (pkgPeriod && allowedConditions.includes(pkgPeriod));
                 if (
                     coupon.coupon_type === 'discount' &&
                     coupon.is_active &&
@@ -69,9 +70,7 @@ async function reserve(req, res) {
                     (!coupon.valid_until || new Date(coupon.valid_until) >= now) &&
                     (coupon.max_uses == null || (coupon.use_count || 0) < coupon.max_uses) &&
                     appliesToPackage &&
-                    pkgPeriod &&
-                    allowedConditions.length > 0 &&
-                    allowedConditions.includes(pkgPeriod)
+                    periodOk
                 ) {
                     const already = await pool.query(
                         'SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2',

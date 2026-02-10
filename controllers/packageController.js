@@ -131,11 +131,9 @@ async function choosePackage(req, res) {
                     const pkgPeriod = (pkg.period_type || '').toLowerCase();
                     const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                     const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
-                    if (!pkgPeriod || allowedConditions.length === 0) {
-                        couponRejectReason = 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
-                    } else if (!appliesToPackage) {
+                    if (!appliesToPackage) {
                         couponRejectReason = 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก';
-                    } else if (!allowedConditions.includes(pkgPeriod)) {
+                    } else if (allowedConditions.length > 0 && (!pkgPeriod || !allowedConditions.includes(pkgPeriod))) {
                         const labels = allowedConditions.map((c) => (c === 'annual' ? 'รายปี' : c === '3months' ? '3 เดือน' : c));
                         couponRejectReason = 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ: ' + labels.join(', ') + ' กรุณาเลือกแพ็กเกจที่ตรงหรือลบรหัสคูปอง';
                     } else {
@@ -338,10 +336,9 @@ async function validateCoupon(req, res) {
         if (!appliesToPackage) {
             return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'คูปองนี้ไม่จับคู่กับแพ็กเกจที่เลือก' } });
         }
-        if (!pkgPeriod || allowedConditions.length === 0 || !allowedConditions.includes(pkgPeriod)) {
+        if (allowedConditions.length > 0 && (!pkgPeriod || !allowedConditions.includes(pkgPeriod))) {
             const labels = allowedConditions.map((c) => (c === 'annual' ? 'รายปี' : c === '3months' ? '3 เดือน' : c));
-            const msg = labels.length ? 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ: ' + labels.join(', ') : 'คูปองนี้ใช้กับแพ็กเกจที่เลือกไม่ได้';
-            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: msg } });
+            return res.json({ success: true, data: { valid: false, extra_days: 0, discount_percent: 0, discount_amount_baht: 0, final_amount: price, message: 'คูปองนี้ใช้ได้เฉพาะแพ็กเกจ: ' + labels.join(', ') } });
         }
         const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
         if (already.rows.length > 0) {
@@ -398,11 +395,12 @@ async function createPendingPayment(req, res) {
                 const pkgPeriod = (pkg.period_type || '').toLowerCase();
                 const allowedConditions = (coupon.condition_type || '').toLowerCase().split(',').map((c) => c.trim()).filter(Boolean);
                 const appliesToPackage = await couponAppliesToPackage(pkgId, coupon.id);
+                const periodOk = allowedConditions.length === 0 || (pkgPeriod && allowedConditions.includes(pkgPeriod));
                 if (coupon.coupon_type === 'discount' && coupon.is_active &&
                     (!coupon.valid_from || new Date(coupon.valid_from) <= now) &&
                     (!coupon.valid_until || new Date(coupon.valid_until) >= now) &&
                     (coupon.max_uses == null || (coupon.use_count || 0) < coupon.max_uses) &&
-                    appliesToPackage && pkgPeriod && allowedConditions.length > 0 && allowedConditions.includes(pkgPeriod)) {
+                    appliesToPackage && periodOk) {
                     const already = await pool.query('SELECT id FROM coupon_redemptions WHERE coupon_id = $1 AND user_id = $2', [coupon.id, userId]);
                     if (already.rows.length === 0) {
                         const pct = Math.min(100, Math.max(0, parseInt(coupon.discount_percent, 10) || 0));

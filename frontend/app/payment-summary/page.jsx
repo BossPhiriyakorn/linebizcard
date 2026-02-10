@@ -17,7 +17,6 @@ function PaymentSummaryContent() {
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
-  const [linePayConfigured, setLinePayConfigured] = useState(false);
   const [paymentChannels, setPaymentChannels] = useState([]);
 
   useEffect(() => {
@@ -42,13 +41,6 @@ function PaymentSummaryContent() {
         } else setAlert({ show: true, msg: 'โหลดแพ็กเกจไม่สำเร็จ', type: 'error' });
       })
       .catch(() => setLoading(false));
-
-    fetch('/api/line-pay/status')
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data && res.data.configured) setLinePayConfigured(true);
-      })
-      .catch(() => {});
 
     fetch('/api/payment-channels', { headers: getHeaders() })
       .then((r) => (handleAuthResponse(r) ? null : r.json()))
@@ -162,38 +154,6 @@ function PaymentSummaryContent() {
       });
   };
 
-  const handleLinePay = () => {
-    if (!packageId) return;
-    setSubmitting(true);
-    setAlert({ show: false, msg: '', type: 'error' });
-    fetch('/api/line-pay/reserve', {
-      method: 'POST',
-      headers: { ...getHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        package_id: packageId,
-        coupon_code: couponCode.trim() || undefined,
-      }),
-    })
-      .then((r) => (handleAuthResponse(r) ? null : r.json()))
-      .then((data) => {
-        setSubmitting(false);
-        if (data == null) return;
-        if (data.success && data.data?.redirectUrl) {
-          window.location.href = data.data.redirectUrl;
-          return;
-        }
-        const msg = data.message || 'LINE Pay ยังไม่เปิดใช้';
-        const noMinMsg = /ไม่ต่ำกว่า|ขั้นต่ำ|minimum|ต่ำกว่า\s*เกณฑ์/i.test(msg)
-          ? 'ยอดหลังส่วนลดต่ำกว่าเกณฑ์ของ LINE Pay กรุณากดปุ่ม "ถัดไป — ไปหน้าคิวอาร์และแนบสลิป" เพื่อชำระได้'
-          : msg;
-        setAlert({ show: true, msg: noMinMsg, type: 'error' });
-      })
-      .catch(() => {
-        setSubmitting(false);
-        setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' });
-      });
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen">
@@ -297,17 +257,6 @@ function PaymentSummaryContent() {
               className="w-full rounded-lg bg-violet-600 py-3.5 font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
             >
               {submitting ? 'กำลังดำเนินการ...' : 'ชำระด้วยบัตรที่ลงทะเบียน'}
-            </button>
-          )}
-          {price > 0 && (
-            <button
-              type="button"
-              disabled={submitting || !linePayConfigured}
-              onClick={handleLinePay}
-              title={!linePayConfigured ? 'รอเชื่อมต่อ LINE Pay (ตั้งค่าใน .env)' : undefined}
-              className={`w-full rounded-lg py-3.5 font-semibold text-white disabled:opacity-60 ${linePayConfigured ? 'bg-[#00B900] hover:bg-[#009900]' : 'bg-gray-500 cursor-not-allowed'}`}
-            >
-              {submitting ? 'กำลังดำเนินการ...' : linePayConfigured ? 'ชำระด้วย LINE Pay' : 'ชำระด้วย LINE Pay (รอเปิดใช้)'}
             </button>
           )}
           <button
