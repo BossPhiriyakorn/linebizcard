@@ -822,13 +822,14 @@ async function createAdmin(req, res) {
                 message: 'รูปแบบอีเมลไม่ถูกต้อง'
             });
         }
+        // เมื่อสร้างแอดมินใหม่: สิทธิ์เต็ม (view_only: false, can_manage_users: true) แต่ห้ามลบแอดมินคนแรก (can_delete_admins: false)
         const perms = permissions && typeof permissions === 'object'
             ? {
                 view_only: permissions.view_only === true,
                 can_delete_admins: permissions.can_delete_admins === true,
                 can_manage_users: permissions.can_manage_users === true
             }
-            : { view_only: true, can_delete_admins: false, can_manage_users: false };
+            : { view_only: false, can_delete_admins: false, can_manage_users: true };
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await pool.query(
             `INSERT INTO admins (username, email, password, permissions, full_name, nickname) VALUES ($1, $2, $3, $4, $5, $6) 
@@ -864,6 +865,11 @@ async function deleteAdmin(req, res) {
         }
         if (targetId === adminId) {
             return res.status(400).json({ success: false, message: 'ไม่สามารถลบบัญชีตัวเองได้' });
+        }
+        // ป้องกันการลบแอดมินคนแรก (id = 1 หรือ created_at เก่าที่สุด)
+        const firstAdmin = await pool.query('SELECT id FROM admins ORDER BY id ASC, created_at ASC LIMIT 1');
+        if (firstAdmin.rows.length > 0 && parseInt(firstAdmin.rows[0].id, 10) === targetId) {
+            return res.status(400).json({ success: false, message: 'ไม่สามารถลบแอดมินคนแรกได้' });
         }
         const result = await pool.query('DELETE FROM admins WHERE id = $1 RETURNING id', [targetId]);
         if (result.rowCount === 0) {

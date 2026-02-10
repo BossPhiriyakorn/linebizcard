@@ -4,20 +4,6 @@ import { useEffect, useState } from 'react';
 import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
-const PERM_LABELS = {
-  view_only: 'ดูได้อย่างเดียว',
-  can_delete_admins: 'ลบแอดมินคนอื่นได้',
-  can_manage_users: 'จัดการผู้ใช้งานได้',
-};
-
-function formatPermissions(permissions) {
-  if (!permissions || typeof permissions !== 'object') return '-';
-  const active = Object.entries(permissions)
-    .filter(([, v]) => v === true)
-    .map(([k]) => PERM_LABELS[k] || k);
-  return active.length ? active.join(', ') : 'ดูได้อย่างเดียว';
-}
-
 export default function AdminsPage() {
   const [alert, showAlert] = useCmsAlert();
   const [list, setList] = useState([]);
@@ -85,9 +71,9 @@ export default function AdminsPage() {
       email: '',
       password: '',
       is_active: true,
-      view_only: true,
+      view_only: false,
       can_delete_admins: false,
-      can_manage_users: false,
+      can_manage_users: true,
     });
     setModalOpen(true);
   };
@@ -109,8 +95,12 @@ export default function AdminsPage() {
   };
 
   const save = () => {
-    const { username, full_name, nickname, email, password, view_only, can_delete_admins, can_manage_users } = form;
-    const perms = { view_only: !!view_only, can_delete_admins: !!can_delete_admins, can_manage_users: !!can_manage_users };
+    const { username, full_name, nickname, email, password } = form;
+    // เมื่อสร้างแอดมินใหม่: สิทธิ์เต็ม (view_only: false, can_manage_users: true) แต่ห้ามลบแอดมินคนแรก (can_delete_admins: false)
+    // เมื่อแก้ไข: ใช้ permissions จาก form (แต่ซ่อน UI ไว้)
+    const perms = editingId
+      ? { view_only: form.view_only === true, can_delete_admins: form.can_delete_admins === true, can_manage_users: form.can_manage_users === true }
+      : { view_only: false, can_delete_admins: false, can_manage_users: true };
     if (editingId) {
       fetch('/api/cms/admins/' + editingId, {
         method: 'PUT',
@@ -228,7 +218,6 @@ export default function AdminsPage() {
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ชื่อเล่น</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">อีเมล</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สถานะ</th>
-                  <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สิทธิ์</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">สร้างเมื่อ</th>
                   <th className="border-b border-gray-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 md:px-4 md:py-3">ดำเนินการ</th>
                 </tr>
@@ -248,7 +237,6 @@ export default function AdminsPage() {
                         <span className="inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">ระงับ</span>
                       )}
                     </td>
-                    <td className="border-b border-gray-200 px-3 py-2 text-sm text-slate-600 md:px-4 md:py-3">{formatPermissions(a.permissions)}</td>
                     <td className="border-b border-gray-200 px-3 py-2 text-sm md:px-4 md:py-3">
                       {a.created_at ? new Date(a.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
                     </td>
@@ -356,38 +344,6 @@ export default function AdminsPage() {
                   </div>
                 </>
               )}
-              <div className="mb-4">
-                <span className="mb-2 block font-medium text-gray-800">สิทธิ์แอดมิน (ติ๊กเลือก)</span>
-                <div className="space-y-2 rounded-md border border-gray-200 bg-slate-50 p-3">
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={form.view_only === true}
-                      onChange={(e) => setForm((f) => ({ ...f, view_only: e.target.checked }))}
-                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
-                    />
-                    <span className="text-sm">{PERM_LABELS.view_only}</span>
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={form.can_delete_admins === true}
-                      onChange={(e) => setForm((f) => ({ ...f, can_delete_admins: e.target.checked }))}
-                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
-                    />
-                    <span className="text-sm">{PERM_LABELS.can_delete_admins}</span>
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={form.can_manage_users === true}
-                      onChange={(e) => setForm((f) => ({ ...f, can_manage_users: e.target.checked }))}
-                      className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
-                    />
-                    <span className="text-sm">{PERM_LABELS.can_manage_users}</span>
-                  </label>
-                </div>
-              </div>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   type="button"
