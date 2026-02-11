@@ -130,6 +130,26 @@ router.get('/liff-login-id', (req, res) => {
     });
 });
 
+// Debug Log Endpoint (สำหรับ frontend ส่ง log มาแสดงใน pm2 logs)
+router.post('/debug-log', (req, res) => {
+    try {
+        const { level = 'info', message, timestamp } = req.body;
+        const logPrefix = '[Frontend-Log]';
+        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString('th-TH', { hour12: false }) : new Date().toLocaleTimeString('th-TH', { hour12: false });
+        
+        if (level === 'error') {
+            console.error(`${logPrefix} [${timeStr}] ${message}`);
+        } else {
+            console.log(`${logPrefix} [${timeStr}] ${message}`);
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        // Silent fail - ไม่ให้ log เอง error
+        res.json({ success: false });
+    }
+});
+
 // User Profile (ต้อง authenticate + ยังเปิดใช้งานอยู่) — รวม created_at และ membership (วันสมัคร, วันหมดอายุ, แพ็กเกจ)
 router.get('/user/profile', authenticateToken, requireActiveUser, async (req, res) => {
     try {

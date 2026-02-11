@@ -19,6 +19,26 @@ async function createCard(req, res) {
     try {
         console.log('[create-card] request received');
         const userId = parseInt(req.user.id, 10);
+        
+        // Log ข้อมูลไฟล์ที่อัปโหลด
+        if (req.file) {
+            console.log('[create-card] file info:', {
+                filename: req.file.filename,
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size,
+                sizeMB: (req.file.size / 1024 / 1024).toFixed(2) + 'MB'
+            });
+        } else if (req.files && req.files.image1 && req.files.image1[0]) {
+            const file = req.files.image1[0];
+            console.log('[create-card] file info:', {
+                filename: file.filename,
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size,
+                sizeMB: (file.size / 1024 / 1024).toFixed(2) + 'MB'
+            });
+        }
         if (isNaN(userId)) {
             return res.status(401).json({
                 success: false,

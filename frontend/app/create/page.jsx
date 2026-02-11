@@ -72,6 +72,19 @@ function CreateContent() {
     setTimeout(() => setAlert((p) => ({ ...p, show: false })), 5000);
   };
 
+  // ส่ง log จาก frontend ไปแสดงใน pm2 logs บนเซิร์ฟเวอร์
+  const sendLogToServer = async (level, message) => {
+    try {
+      await fetch('/api/debug-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, message, timestamp: new Date().toISOString() })
+      });
+    } catch (e) {
+      // Silent fail - ไม่ให้ log เอง error
+    }
+  };
+
   /**
    * ลดขนาดไฟล์รูป (compress) โดยไม่เปลี่ยนความละเอียด (dimensions)
    * @param {File} file - ไฟล์รูปต้นฉบับ
@@ -80,9 +93,22 @@ function CreateContent() {
    * @returns {Promise<File>} - ไฟล์ที่ compress แล้ว
    */
   const compressImage = async (file, quality = 0.75, maxSizeMB = 2) => {
+    // ถ้าเป็น HEIF/HEIC ไม่ต้อง compress (Browser ไม่รองรับ - ให้ server จัดการ)
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || 
+                   file.name.toLowerCase().endsWith('.heic') || 
+                   file.name.toLowerCase().endsWith('.heif');
+    if (isHeic) {
+      const msg = `[Compress] ข้าม HEIF/HEIC (${file.name}) - ให้ server จัดการ`;
+      console.log(msg);
+      sendLogToServer('info', msg);
+      return file;
+    }
+    
     // ถ้าไฟล์เล็กกว่า maxSizeMB ไม่ต้อง compress
     if (file.size <= maxSizeMB * 1024 * 1024) {
-      console.log(`[Compress] ไฟล์ขนาด ${(file.size / 1024 / 1024).toFixed(2)}MB ไม่ต้อง compress (< ${maxSizeMB}MB)`);
+      const msg = `[Compress] ไฟล์ขนาด ${(file.size / 1024 / 1024).toFixed(2)}MB ไม่ต้อง compress (< ${maxSizeMB}MB)`;
+      console.log(msg);
+      sendLogToServer('info', msg);
       return file;
     }
 
@@ -117,7 +143,9 @@ function CreateContent() {
                 const compressedSizeMB = (compressedFile.size / 1024 / 1024).toFixed(2);
                 const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(0);
                 
-                console.log(`[Compress] สำเร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%) | ขนาด: ${img.width}x${img.height}px | คุณภาพ: ${quality * 100}%`);
+                const msg = `[Compress] สำเร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%) | ขนาด: ${img.width}x${img.height}px | คุณภาพ: ${quality * 100}%`;
+                console.log(msg);
+                sendLogToServer('info', msg);
                 
                 resolve(compressedFile);
               } else {
@@ -204,36 +232,48 @@ function CreateContent() {
     let processedImage = image1;
     const originalSizeMB = (image1.size / 1024 / 1024).toFixed(2);
     
-    console.log(`[Create-Frontend] เริ่มต้น: ${image1.name} (${originalSizeMB}MB)`);
+    const startMsg = `[Create-Frontend] เริ่มต้น: ${image1.name} (${originalSizeMB}MB)`;
+    console.log(startMsg);
+    sendLogToServer('info', startMsg);
     
     if (image1.size > 2 * 1024 * 1024) {
       try {
         setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
-        console.log(`[Create-Frontend] เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB)`);
+        const compressStartMsg = `[Create-Frontend] เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB)`;
+        console.log(compressStartMsg);
+        sendLogToServer('info', compressStartMsg);
         
         processedImage = await compressImage(image1, 0.75, 2);
         
         const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
         const reduction = ((1 - processedImage.size / image1.size) * 100).toFixed(0);
-        console.log(`[Create-Frontend] ลดขนาดเสร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%)`);
+        const compressDoneMsg = `[Create-Frontend] ลดขนาดเสร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%)`;
+        console.log(compressDoneMsg);
+        sendLogToServer('info', compressDoneMsg);
         setLoadingMsg(`ลดขนาดรูปเสร็จ (${originalSizeMB}MB → ${compressedSizeMB}MB)`);
         
         // รอ 500ms ให้เห็นข้อความ
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
-        console.error(`[Create-Frontend] ลดขนาดไม่สำเร็จ: ${err.message} - ใช้ไฟล์เดิม`);
+        const errorMsg = `[Create-Frontend] ลดขนาดไม่สำเร็จ: ${err.message} - ใช้ไฟล์เดิม`;
+        console.error(errorMsg);
+        sendLogToServer('error', errorMsg);
         // ถ้า compress ไม่ได้ ใช้ไฟล์เดิม
         processedImage = image1;
         setLoadingMsg('ลดขนาดรูปไม่สำเร็จ ใช้ไฟล์เดิม');
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } else {
-      console.log(`[Create-Frontend] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< 2MB)`);
+      const skipMsg = `[Create-Frontend] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< 2MB)`;
+      console.log(skipMsg);
+      sendLogToServer('info', skipMsg);
     }
     
     // ขั้นตอนที่ 2: อัปโหลดและสร้างการ์ด
     setLoadingMsg('กำลังอัปโหลดและสร้างการ์ด...');
-    console.log(`[Create-Frontend] เริ่มอัปโหลด: ${processedImage.name} (${(processedImage.size / 1024 / 1024).toFixed(2)}MB)`);
+    const uploadMsg = `[Create-Frontend] เริ่มอัปโหลด: ${processedImage.name} (${(processedImage.size / 1024 / 1024).toFixed(2)}MB)`;
+    console.log(uploadMsg);
+    sendLogToServer('info', uploadMsg);
     
     const fd = new FormData();
     fd.append('template_id', selectedTemplate.id);
@@ -250,7 +290,9 @@ function CreateContent() {
         body: fd,
       });
       
-      console.log(`[Create-Frontend] ได้รับ response: ${res.status} ${res.statusText}`);
+      const responseMsg = `[Create-Frontend] ได้รับ response: ${res.status} ${res.statusText}`;
+      console.log(responseMsg);
+      sendLogToServer('info', responseMsg);
       
       if (handleAuthResponse(res)) {
         setLoading(false);
@@ -267,7 +309,9 @@ function CreateContent() {
         if (status === 408 || status === 504) msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
         else if (status === 413) msg = 'ไฟล์ใหญ่เกินไป ลองเลือกรูปจากอัลบั้มหรือลดขนาดรูป';
         else if (!res.ok) msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
-        console.error(`[Create-Frontend] ❌ Parse error: ${status} ${text?.substring(0, 100)}`);
+        const parseErrorMsg = `[Create-Frontend] ❌ Parse error: ${status} ${text?.substring(0, 100)}`;
+        console.error(parseErrorMsg);
+        sendLogToServer('error', parseErrorMsg);
         showAlertMsg(msg, 'error');
         setLoading(false);
         setLoadingMsg('');
@@ -276,7 +320,9 @@ function CreateContent() {
       
       if (data.success) {
         const cardId = data.data?.unique_id || data.data?.id || 'unknown';
-        console.log(`[Create-Frontend] ✅ สร้างการ์ดสำเร็จ: ${cardId}`);
+        const successMsg = `[Create-Frontend] ✅ สร้างการ์ดสำเร็จ: ${cardId}`;
+        console.log(successMsg);
+        sendLogToServer('info', successMsg);
         setLoadingMsg('สร้างการ์ดสำเร็จ! กำลังไปหน้าการ์ดของฉัน...');
         
         // รอ 800ms ให้เห็นข้อความ
@@ -288,13 +334,17 @@ function CreateContent() {
         router.push('/my-cards?created=1');
         return;
       } else {
-        console.error(`[Create-Frontend] ❌ สร้างไม่สำเร็จ: ${data.message}`);
+        const failMsg = `[Create-Frontend] ❌ สร้างไม่สำเร็จ: ${data.message}`;
+        console.error(failMsg);
+        sendLogToServer('error', failMsg);
         showAlertMsg(data.message || 'สร้างไม่สำเร็จ', 'error');
         setLoading(false);
         setLoadingMsg('');
       }
     } catch (err) {
-      console.error(`[Create-Frontend] ❌ Exception: ${err.message}`);
+      const exceptionMsg = `[Create-Frontend] ❌ Exception: ${err.message}`;
+      console.error(exceptionMsg);
+      sendLogToServer('error', exceptionMsg);
       const msg = err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม';
       showAlertMsg(msg, 'error');
       setLoading(false);
