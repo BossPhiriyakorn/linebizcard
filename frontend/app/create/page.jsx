@@ -23,6 +23,7 @@ function CreateContent() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
   const [createdSuccess, setCreatedSuccess] = useState(false);
 
   useEffect(() => {
@@ -69,6 +70,72 @@ function CreateContent() {
   const showAlertMsg = (msg, type) => {
     setAlert({ show: true, msg, type });
     setTimeout(() => setAlert((p) => ({ ...p, show: false })), 5000);
+  };
+
+  /**
+   * ลดขนาดไฟล์รูป (compress) โดยไม่เปลี่ยนความละเอียด (dimensions)
+   * @param {File} file - ไฟล์รูปต้นฉบับ
+   * @param {number} quality - คุณภาพ 0.0-1.0 (0.75 = 75%)
+   * @param {number} maxSizeMB - ถ้าไฟล์ใหญ่กว่านี้ค่อย compress (default 2MB)
+   * @returns {Promise<File>} - ไฟล์ที่ compress แล้ว
+   */
+  const compressImage = async (file, quality = 0.75, maxSizeMB = 2) => {
+    // ถ้าไฟล์เล็กกว่า maxSizeMB ไม่ต้อง compress
+    if (file.size <= maxSizeMB * 1024 * 1024) {
+      console.log(`[Compress] ไฟล์ขนาด ${(file.size / 1024 / 1024).toFixed(2)}MB ไม่ต้อง compress (< ${maxSizeMB}MB)`);
+      return file;
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        const img = new Image();
+        
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          
+          // ใช้ขนาดเดิม (ไม่ resize dimensions)
+          canvas.width = img.width;
+          canvas.height = img.height;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, img.width, img.height);
+          
+          // แปลงเป็น JPEG พร้อมลด quality
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                // สร้าง File object ใหม่จาก blob
+                const compressedFile = new File(
+                  [blob], 
+                  file.name.replace(/\.\w+$/, '.jpg'), // เปลี่ยนนามสกุลเป็น .jpg
+                  { type: 'image/jpeg' }
+                );
+                
+                const originalSizeMB = (file.size / 1024 / 1024).toFixed(2);
+                const compressedSizeMB = (compressedFile.size / 1024 / 1024).toFixed(2);
+                const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(0);
+                
+                console.log(`[Compress] สำเร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%) | ขนาด: ${img.width}x${img.height}px | คุณภาพ: ${quality * 100}%`);
+                
+                resolve(compressedFile);
+              } else {
+                reject(new Error('ไม่สามารถลดขนาดรูปได้'));
+              }
+            },
+            'image/jpeg',
+            quality  // คุณภาพ 0.75 = 75%
+          );
+        };
+        
+        img.onerror = () => reject(new Error('ไม่สามารถโหลดรูปได้'));
+        img.src = e.target.result;
+      };
+      
+      reader.onerror = () => reject(new Error('ไม่สามารถอ่านไฟล์ได้'));
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleSelectTemplate = (t) => {
@@ -129,22 +196,64 @@ function CreateContent() {
       showAlertMsg('กรุณาอัปโหลดรูปภาพ', 'error');
       return;
     }
+    
     setLoading(true);
     setAlert({ show: false, msg: '', type: 'error' });
+    
+    // ขั้นตอนที่ 1: ลดขนาดรูป (ถ้าใหญ่กว่า 2MB)
+    let processedImage = image1;
+    const originalSizeMB = (image1.size / 1024 / 1024).toFixed(2);
+    
+    if (image1.size > 2 * 1024 * 1024) {
+      try {
+        setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
+        console.log(`[Create] เริ่มลดขนาดรูป: ${image1.name} (${originalSizeMB}MB)`);
+        
+        processedImage = await compressImage(image1, 0.75, 2);
+        
+        const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
+        console.log(`[Create] ลดขนาดรูปเสร็จ: ${compressedSizeMB}MB`);
+        setLoadingMsg(`ลดขนาดรูปเสร็จ (${originalSizeMB}MB → ${compressedSizeMB}MB)`);
+        
+        // รอ 500ms ให้เห็นข้อความ
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (err) {
+        console.error('[Create] ลดขนาดรูปไม่สำเร็จ:', err);
+        // ถ้า compress ไม่ได้ ใช้ไฟล์เดิม
+        processedImage = image1;
+        setLoadingMsg('ลดขนาดรูปไม่สำเร็จ ใช้ไฟล์เดิม');
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } else {
+      console.log(`[Create] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด`);
+    }
+    
+    // ขั้นตอนที่ 2: อัปโหลดและสร้างการ์ด
+    setLoadingMsg('กำลังอัปโหลดและสร้างการ์ด...');
+    console.log('[Create] เริ่มอัปโหลด:', processedImage.name, `(${(processedImage.size / 1024 / 1024).toFixed(2)}MB)`);
+    
     const fd = new FormData();
     fd.append('template_id', selectedTemplate.id);
     fd.append('name', form.name.trim());
     if (form.phone) fd.append('phone', form.phone);
     if (form.email) fd.append('email', form.email);
     if (form.description) fd.append('description', form.description);
-    if (image1) fd.append('image1', image1);
+    fd.append('image1', processedImage);
+    
     try {
       const res = await fetch('/api/create-card', {
         method: 'POST',
         headers: getHeaders(),
         body: fd,
       });
-      if (handleAuthResponse(res)) return;
+      
+      console.log('[Create] ได้รับ response:', res.status, res.statusText);
+      
+      if (handleAuthResponse(res)) {
+        setLoading(false);
+        setLoadingMsg('');
+        return;
+      }
       const text = await res.text();
       let data;
       try {
@@ -155,23 +264,37 @@ function CreateContent() {
         if (status === 408 || status === 504) msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
         else if (status === 413) msg = 'ไฟล์ใหญ่เกินไป ลองเลือกรูปจากอัลบั้มหรือลดขนาดรูป';
         else if (!res.ok) msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
+        console.error('[Create] Parse error:', status, text?.substring(0, 200));
         showAlertMsg(msg, 'error');
         setLoading(false);
+        setLoadingMsg('');
         return;
       }
+      
       if (data.success) {
+        console.log('[Create] สร้างการ์ดสำเร็จ:', data.data?.unique_id || data.data?.id);
+        setLoadingMsg('สร้างการ์ดสำเร็จ! กำลังไปหน้าการ์ดของฉัน...');
+        
+        // รอ 800ms ให้เห็นข้อความ
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
         setLoading(false);
+        setLoadingMsg('');
         // ไปหน้าการ์ดของฉันพร้อม query ให้ SWR revalidate — ทุกยูสจะเห็นการ์ดใหม่ทันที
         router.push('/my-cards?created=1');
         return;
       } else {
+        console.error('[Create] สร้างไม่สำเร็จ:', data.message);
         showAlertMsg(data.message || 'สร้างไม่สำเร็จ', 'error');
         setLoading(false);
+        setLoadingMsg('');
       }
     } catch (err) {
+      console.error('[Create] Exception:', err);
       const msg = err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม';
       showAlertMsg(msg, 'error');
       setLoading(false);
+      setLoadingMsg('');
     }
   };
 
@@ -395,8 +518,19 @@ function CreateContent() {
                   className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] hover:-translate-y-0.5 hover:shadow-lg disabled:bg-gray-400 disabled:translate-y-0 disabled:shadow-none"
                   disabled={loading || !form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
                 >
-                  {loading ? 'กำลังสร้าง...' : 'สร้างการ์ด'}
+                  {loading ? (loadingMsg || 'กำลังสร้าง...') : 'สร้างการ์ด'}
                 </button>
+                {loading && loadingMsg && (
+                  <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5 text-sm text-blue-800">
+                    <div className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>{loadingMsg}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </form>
           </div>
