@@ -9,6 +9,20 @@ const uploadDir = process.env.UPLOAD_DIR || 'uploads/images';
 const MAX_IMAGE_WIDTH = parseInt(process.env.MAX_IMAGE_WIDTH, 10) || 2047;
 const MAX_IMAGE_HEIGHT = parseInt(process.env.MAX_IMAGE_HEIGHT, 10) || 2048;
 
+/** ตรวจจาก magic bytes ว่าไฟล์เป็น HEIC/HEIF หรือไม่ (รองรับรูปจาก iPhone ที่ส่งเป็น .jpg แต่เนื้อหาเป็น HEIC) */
+async function isHeicByMagicBytes(absolutePath) {
+    try {
+        const buf = await fs.readFile(absolutePath, { start: 0, end: 15 });
+        if (buf.length < 12) return false;
+        const ftyp = buf.toString('ascii', 4, 8);
+        if (ftyp !== 'ftyp') return false;
+        const brand = buf.toString('ascii', 8, 12);
+        return ['heic', 'heix', 'hevc', 'mif1', 'msf1'].includes(brand);
+    } catch {
+        return false;
+    }
+}
+
 /**
  * แปลง input (path หรือ buffer) เป็น WebP และเขียนไฟล์ — ถ้าขนาดเกิน MAX_IMAGE_WIDTH/MAX_IMAGE_HEIGHT จะรีไซส์ให้อยู่ภายใน (รักษาอัตราส่วน)
  */
@@ -43,7 +57,7 @@ async function heicToJpegBuffer(absolutePath) {
     }
 }
 
-// รูปแบบที่ Sharp รองรับโดยตรง: jpeg, png, gif, webp, avif, tiff. HEIC/HEIF ใช้ heic-convert แยก. BMP/ICO ไม่รองรับการแปลง
+// รองรับทุกรูปแบบด้านล่าง (อัปโหลด + แปลง): Sharp โดยตรง = jpeg, png, gif, webp, avif, tiff. HEIC/HEIF = ใช้ heic-convert (รวม .jpg ที่เนื้อหาเป็น HEIC จาก iPhone). BMP/ICO รับอัปโหลดได้แต่ไม่แปลง
 const SUPPORTED_CONVERT_EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.tiff', '.tif', '.heic', '.heif'];
 const UNSUPPORTED_CONVERT_EXT = ['.bmp', '.ico'];
 
@@ -75,28 +89,49 @@ async function convertToWebp(inputPath) {
         );
     }
 
-    const isHeic = ext === '.heic' || ext === '.heif';
-    if (isHeic) {
+    const isHeicExt = ext === '.heic' || ext === '.heif';
+    if (isHeicExt) {
         const jpegBuffer = await heicToJpegBuffer(absolutePath);
         await toWebpWithResize(jpegBuffer, outputPath);
-    } else {
-        try {
-            await toWebpWithResize(absolutePath, outputPath);
-        } catch (sharpErr) {
-            // รูปจาก iPhone บางครั้งถูกส่งเป็น .jpg แต่เนื้อหาเป็น HEIC — ลองแปลงเป็น HEIC
-            const msg = (sharpErr && sharpErr.message) ? sharpErr.message : '';
-            const looksLikeHeic = /unsupported|format|invalid|corrupt|expected|magic/i.test(msg);
-            if (looksLikeHeic) {
+    } else if (ext === '.jpg' || ext === '.jpeg') {
+        // รูปจาก iPhone/แอปบางตัวส่งเป็น .jpg แต่เนื้อหาเป็น HEIC — ตรวจจาก magic bytes ก่อน แล้ว fallback ทุกครั้งที่ Sharp ล้มเหลว
+        const maybeHeic = await isHeicByMagicBytes(absolutePath);
+        if (maybeHeic) {
+            try {
+                const jpegBuffer = await heicToJpegBuffer(absolutePath);
+                await toWebpWithResize(jpegBuffer, outputPath);
+            } catch (heicErr) {
+                const msg = (heicErr && heicErr.message) ? heicErr.message : '';
+                throw new Error('รูปภาพเป็นรูปแบบ HEIC (iPhone) แต่ระบบแปลงไม่ได้: ' + msg + ' — ลองตั้งค่า iPhone: กล้อง > รูปแบบ > Most Compatible');
+            }
+        } else {
+            try {
+                await toWebpWithResize(absolutePath, outputPath);
+            } catch (sharpErr) {
                 try {
                     const jpegBuffer = await heicToJpegBuffer(absolutePath);
                     await toWebpWithResize(jpegBuffer, outputPath);
                 } catch (heicErr) {
-                    throw new Error('รูปภาพอาจเป็นรูปแบบจาก iPhone (HEIC) แต่ระบบแปลงไม่ได้: ' + ((heicErr && heicErr.message) ? heicErr.message : '') + ' — กรุณาบันทึกรูปเป็น Most Compatible (JPEG) ใน iPhone');
+                    const supportedList = 'JPEG, PNG, GIF, WebP, AVIF, TIFF, HEIC/HEIF (iPhone)';
+                    throw new Error(
+                        ((sharpErr && sharpErr.message) ? sharpErr.message : 'รูปแบบรูปไม่รองรับ') +
+                        ' — รองรับ: ' + supportedList + '. ถ้าเป็นรูปจาก iPhone ลองตั้งค่า กล้อง > รูปแบบ > Most Compatible'
+                    );
                 }
-            } else {
+            }
+        }
+    } else {
+        try {
+            await toWebpWithResize(absolutePath, outputPath);
+        } catch (sharpErr) {
+            // นามสกุลอื่น (png, webp, ...) — ถ้า Sharp ล้มเหลว อาจเป็นไฟล์เสียหรือรูปแบบพิเศษ ลอง HEIC เป็นทางเลือกสุดท้าย
+            try {
+                const jpegBuffer = await heicToJpegBuffer(absolutePath);
+                await toWebpWithResize(jpegBuffer, outputPath);
+            } catch (heicErr) {
                 const supportedList = 'JPEG, PNG, GIF, WebP, AVIF, TIFF, HEIC/HEIF (iPhone)';
                 throw new Error(
-                    (sharpErr && sharpErr.message ? sharpErr.message : 'รูปแบบรูปไม่รองรับ') +
+                    ((sharpErr && sharpErr.message) ? sharpErr.message : 'รูปแบบรูปไม่รองรับ') +
                     ' — รองรับการแปลงเป็น WebP: ' + supportedList
                 );
             }

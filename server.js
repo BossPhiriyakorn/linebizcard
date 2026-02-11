@@ -68,7 +68,6 @@ nextApp.prepare().then(() => {
     console.log('📁 Environment: ' + (process.env.NODE_ENV || 'development'));
     console.log('🔗 LIFF ID: ' + (process.env.LIFF_ID || ''));
     console.log('📦 Frontend: Next.js (same port)');
-    console.log('🔌 API CMS: /api/cms (ต้องรันเซิร์ฟเวอร์นี้จากโฟลเดอร์หลัก: npm run dev)');
   });
 }).catch((err) => {
   console.error('Next.js prepare failed:', err);

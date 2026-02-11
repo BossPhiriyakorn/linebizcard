@@ -117,13 +117,13 @@ async function createCard(req, res) {
             if (row) profile = { email: row.email };
         }
 
-        // แปลงรูปที่อัปโหลดเป็น WebP (ไม่ปรับขนาด) เพื่อลดขนาดไฟล์
+        // แปลงรูปที่อัปโหลดเป็น WebP (รีไซส์ถ้าเกิน 2047x2048) — รองรับ JPEG, PNG, HEIC/iPhone ฯลฯ
         if (req.file || req.files) {
             try {
                 await convertUploadedToWebp(req);
             } catch (err) {
-                console.error('Convert to WebP error:', err && err.message ? err.message : '');
-                const msg = err && err.message ? err.message : 'เกิดข้อผิดพลาด';
+                const msg = err && err.message ? err.message : String(err);
+                console.error('[create-card] Convert to WebP failed:', msg, err && err.stack ? err.stack : '');
                 const isHeicHint = /iPhone|HEIC|Most Compatible|heic/i.test(msg);
                 return res.status(500).json({
                     success: false,
@@ -180,7 +180,7 @@ async function createCard(req, res) {
         try {
             processedTemplate = replaceTemplatePlaceholders(templateJson, data);
         } catch (templateError) {
-            console.error('Template processing error:', templateError.message);
+            console.error('[create-card] Template processing error:', templateError.message, templateError.stack || '');
             return res.status(500).json({
                 success: false,
                 message: 'เกิดข้อผิดพลาดในการประมวลผล template: ' + templateError.message
@@ -190,6 +190,7 @@ async function createCard(req, res) {
         // สร้าง Flex Message JSON structure (รองรับ template รูปแบบ tectony1)
         const tectony1 = processedTemplate && processedTemplate.tectony1;
         if (!tectony1 || !Array.isArray(tectony1) || !tectony1[1]) {
+            console.error('[create-card] Invalid template structure: missing tectony1[0] or tectony1[1], template_id=', templateId);
             return res.status(500).json({
                 success: false,
                 message: 'โครงสร้าง Template ไม่ถูกต้อง (ต้องมี tectony1[0], tectony1[1])'
@@ -231,9 +232,7 @@ async function createCard(req, res) {
         );
 
         const card = insertResult.rows[0];
-        if (process.env.NODE_ENV !== 'production') {
-            console.log('Card created: card_id=' + card.id);
-        }
+        console.log('[create-card] success card_id=' + card.id + ' user_id=' + userId + ' unique_id=' + card.unique_id);
 
         if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
         res.status(201).json({
@@ -250,10 +249,10 @@ async function createCard(req, res) {
         });
     } catch (error) {
         const dbDetail = error.detail || error.message;
-        console.error('Create card error:', error.message, 'code:', error.code || '');
+        console.error('[create-card] failure:', error.message, 'code:', error.code || '', 'detail:', dbDetail || '', error.stack || '');
         // ถ้าเขียน JSON ไปแล้วแต่ INSERT ล้มเหลว ลบไฟล์ที่เขียนไว้เพื่อไม่ให้มีไฟล์ค้าง
         if (jsonWrittenPath) {
-            fs.remove(jsonWrittenPath).catch((err) => console.error('Error removing orphan JSON:', err && err.message ? err.message : ''));
+            fs.remove(jsonWrittenPath).catch((err) => console.error('[create-card] Error removing orphan JSON:', err && err.message ? err.message : ''));
         }
         const msg = process.env.NODE_ENV !== 'production' && dbDetail
             ? `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message} (${dbDetail})`
