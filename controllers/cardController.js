@@ -17,7 +17,7 @@ fs.ensureDirSync(jsonDir);
 async function createCard(req, res) {
     let jsonWrittenPath = null; // ใช้ลบไฟล์ถ้า INSERT ล้มเหลว
     try {
-        if (req.timedout) return; // connect-timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
+        console.log('[create-card] request received');
         const userId = parseInt(req.user.id, 10);
         if (isNaN(userId)) {
             return res.status(401).json({
@@ -234,7 +234,7 @@ async function createCard(req, res) {
         const card = insertResult.rows[0];
         console.log('[create-card] success card_id=' + card.id + ' user_id=' + userId + ' unique_id=' + card.unique_id);
 
-        if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
+        if (res.headersSent) return; // ป้องกันส่ง response ซ้ำ
         res.status(201).json({
             success: true,
             message: 'สร้างการ์ดสำเร็จ',
@@ -257,7 +257,7 @@ async function createCard(req, res) {
         const msg = process.env.NODE_ENV !== 'production' && dbDetail
             ? `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message} (${dbDetail})`
             : `เกิดข้อผิดพลาดในการสร้างการ์ด: ${error.message}`;
-        if (res.headersSent) return; // ถ้า timeout ส่ง 408 ไปแล้ว ไม่ส่งซ้ำ
+        if (res.headersSent) return; // ป้องกันส่ง response ซ้ำ
         res.status(500).json({
             success: false,
             message: msg

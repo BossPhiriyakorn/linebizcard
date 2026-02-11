@@ -118,6 +118,8 @@ npm run build
 
 **หมายเหตุ:** ไม่ต้องรัน `cd frontend && npm install` แยก — ใช้ `npm install` ที่รากเพียงครั้งเดียว
 
+**Production (อัปโหลดรูป + แปลง WebP):** บนเซิร์ฟเวอร์ต้องติดตั้ง dependencies บนเครื่องนั้นเลย (`npm install` หรือ `npm ci`) เพื่อให้ **sharp** และ **heic-convert** ถูก build ตรงกับ OS (Linux/Windows). อย่า copy โฟลเดอร์ `node_modules` จากเครื่องอื่นมาใช้. แพ็กเกจที่ใช้ในการอัปโหลดและแปลงรูป: `sharp`, `heic-convert`, `multer`, `fs-extra` (อยู่ใน `package.json` แล้ว). การสร้างการ์ด (create-card) ไม่จำกัด timeout เพื่อรองรับอัปโหลดและแปลงรูปช้า.
+
 Server หลักจะรันที่ `http://localhost:3000` (ปรับตาม `PORT` และ `BASE_URL` ใน `.env`)
 
 ## 📁 โครงสร้างโปรเจกต์ (สรุป)

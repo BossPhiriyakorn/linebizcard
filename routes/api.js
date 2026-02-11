@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const timeout = require('connect-timeout');
 const { authenticateToken, requireActiveUser, requireActiveMembership } = require('../middleware/auth');
 const templateController = require('../controllers/templateController');
 const cardController = require('../controllers/cardController');
@@ -13,19 +12,6 @@ const { uploadSingle, uploadMultiple, uploadSlip, handleUploadError } = require(
 const { rateLimitCreateCard, rateLimitPayment, rateLimitPaymentChannels } = require('../middleware/rateLimit');
 const pool = require('../config/database');
 const { decryptIfEncrypted } = require('../utils/encryption');
-
-// Timeout 1 นาที สำหรับ create-card: เมื่อเกินเวลาจะส่ง 408 พร้อมข้อความชัดเจน
-function createCardTimeoutHandler(req, res, next) {
-    req.on('timeout', function () {
-        if (!res.headersSent) {
-            res.status(408).json({
-                success: false,
-                message: 'คำขอสร้างการ์ดใช้เวลานานเกินไป (1 นาที) กรุณาลองใหม่'
-            });
-        }
-    });
-    next();
-}
 
 // Health check: ตรวจสอบการเชื่อมต่อ API และฐานข้อมูล
 router.get('/health', async (req, res) => {
@@ -108,13 +94,12 @@ router.get('/templates', templateController.getAllTemplates);
 router.get('/templates/:id', templateController.getTemplateById);
 
 // Cards (ต้อง authenticate + ยังไม่ระงับ + สมาชิกยังไม่หมดอายุ) - สร้าง/ดู/แก้/ลบ/แชร์การ์ดใช้ไม่ได้ถ้าหมดอายุ
+// create-card: ไม่จำกัด timeout เพื่อรองรับอัปโหลดและแปลงรูปช้า (production / HEIC)
 router.post('/create-card',
     rateLimitCreateCard,
     authenticateToken,
     requireActiveUser,
     requireActiveMembership,
-    timeout('60s'),
-    createCardTimeoutHandler,
     uploadMultiple,
     handleUploadError,
     cardController.createCard
