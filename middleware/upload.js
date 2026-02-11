@@ -24,20 +24,31 @@ const storage = multer.diskStorage({
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        let ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+        // iPhone อาจส่ง MIME เป็น image/heic แต่ชื่อไฟล์ไม่มี .heic — บังคับนามสกุลให้ตรงกับเนื้อหา
+        const mimeHeic = file.mimetype === 'image/heic' || file.mimetype === 'image/heif';
+        if (mimeHeic && (ext !== '.heic' && ext !== '.heif')) ext = '.heic';
+        if (!ext) ext = '.jpg';
         const safeExt = ext.startsWith('.') ? ext : '.' + ext;
         cb(null, `img-${uniqueSuffix}${safeExt}`);
     }
 });
 
-// File filter (การ์ด + สลิป): รองรับทุกรูปแบบรูปภาพ (ถ้า ALLOWED_FILE_TYPES ว่าง = รับทุกนามสกุลที่ขึ้นต้นด้วยรูป)
+// File filter (การ์ด + สลิป): รองรับทุกรูปแบบรูปภาพ — ตรวจจากนามสกุลหรือ MIME (กรณีไม่มีนามสกุล/แพลตฟอร์มต่างกัน)
 const DEFAULT_IMAGE_EXT = 'jpg,jpeg,png,gif,webp,heic,heif,bmp,tiff,tif,ico,avif';
+const MIME_TO_EXT = {
+    'image/jpeg': 'jpeg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+    'image/heic': 'heic', 'image/heif': 'heif', 'image/avif': 'avif',
+    'image/tiff': 'tiff', 'image/bmp': 'bmp', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico'
+};
 const fileFilter = (req, file, cb) => {
     const envTypes = (process.env.ALLOWED_FILE_TYPES || '').trim();
     const allowedTypes = (envTypes || DEFAULT_IMAGE_EXT).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
-    
-    if (allowedTypes.length === 0 || allowedTypes.includes(ext)) {
+    const mimeExt = MIME_TO_EXT[file.mimetype];
+    const allowedByExt = allowedTypes.length === 0 || allowedTypes.includes(ext);
+    const allowedByMime = mimeExt && allowedTypes.includes(mimeExt);
+    if (allowedByExt || allowedByMime) {
         cb(null, true);
     } else {
         cb(new Error(`ประเภทไฟล์ไม่รองรับ อนุญาตเฉพาะ: ${allowedTypes.join(', ')}`), false);
@@ -92,7 +103,9 @@ const cmsFileFilter = (req, file, cb) => {
 const cmsSettingsStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, cmsSettingsDir),
     filename: (req, file, cb) => {
-        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        let ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+        if ((file.mimetype === 'image/heic' || file.mimetype === 'image/heif') && ext !== '.heic' && ext !== '.heif') ext = '.heic';
+        if (!ext) ext = '.jpg';
         const safeExt = ext.startsWith('.') ? ext : '.' + ext;
         cb(null, `cms-${Date.now()}-${Math.round(Math.random() * 1E9)}${safeExt}`);
     }
@@ -101,7 +114,9 @@ const cmsSettingsStorage = multer.diskStorage({
 const cmsQrStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, cmsQrDir),
     filename: (req, file, cb) => {
-        const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
+        let ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+        if ((file.mimetype === 'image/heic' || file.mimetype === 'image/heif') && ext !== '.heic' && ext !== '.heif') ext = '.heic';
+        if (!ext) ext = '.jpg';
         const safeExt = ext.startsWith('.') ? ext : '.' + ext;
         cb(null, `qr-${Date.now()}-${Math.round(Math.random() * 1E9)}${safeExt}`);
     }

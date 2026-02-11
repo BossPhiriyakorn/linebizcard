@@ -7,8 +7,8 @@ const { replaceTemplatePlaceholders, createFlexMessageJson } = require('../utils
 const { convertUploadedToWebp } = require('../utils/imageToWebp');
 const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
 
-// สร้างโฟลเดอร์ json ถ้ายังไม่มี
-const jsonDir = path.join(__dirname, '../json');
+// โฟลเดอร์ json — ใช้ process.cwd() ให้ตรงกับ express.static('json') ใน server.js เพื่อให้เขียนกับส่งจากที่เดียวกัน
+const jsonDir = path.join(process.cwd(), 'json');
 fs.ensureDirSync(jsonDir);
 
 /**
@@ -123,9 +123,11 @@ async function createCard(req, res) {
                 await convertUploadedToWebp(req);
             } catch (err) {
                 console.error('Convert to WebP error:', err && err.message ? err.message : '');
+                const msg = err && err.message ? err.message : 'เกิดข้อผิดพลาด';
+                const isHeicHint = /iPhone|HEIC|Most Compatible|heic/i.test(msg);
                 return res.status(500).json({
                     success: false,
-                    message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
+                    message: isHeicHint ? msg : ('ไม่สามารถประมวลผลรูปภาพได้: ' + msg)
                 });
             }
         }
@@ -419,9 +421,11 @@ async function updateCard(req, res) {
                 await convertUploadedToWebp(req);
             } catch (err) {
                 console.error('Convert to WebP error:', err && err.message ? err.message : '');
+                const msg = err && err.message ? err.message : 'เกิดข้อผิดพลาด';
+                const isHeicHint = /iPhone|HEIC|Most Compatible|heic/i.test(msg);
                 return res.status(500).json({
                     success: false,
-                    message: 'ไม่สามารถประมวลผลรูปภาพได้: ' + (err.message || 'เกิดข้อผิดพลาด')
+                    message: isHeicHint ? msg : ('ไม่สามารถประมวลผลรูปภาพได้: ' + msg)
                 });
             }
         }

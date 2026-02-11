@@ -139,7 +139,8 @@ function CreateContent() {
       }
       if (data.success) {
         setLoading(false);
-        setCreatedSuccess(true);
+        // ไปหน้าการ์ดของฉันพร้อม query ให้ SWR revalidate — ทุกยูสจะเห็นการ์ดใหม่ทันที
+        router.push('/my-cards?created=1');
         return;
       } else {
         showAlertMsg(data.message || 'สร้างไม่สำเร็จ', 'error');

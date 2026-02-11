@@ -19,6 +19,7 @@ export default function UserDetailPage() {
   const [editMembershipOpen, setEditMembershipOpen] = useState(false);
   const [editForm, setEditForm] = useState({ end_date: '', package_id: '' });
   const [savingMembership, setSavingMembership] = useState(false);
+  const [copiedCardId, setCopiedCardId] = useState(null);
 
   const loadDetail = () => {
     if (!id) return;
@@ -478,9 +479,18 @@ export default function UserDetailPage() {
                     <td className="border-b border-gray-200 px-3 py-2 text-sm">{c.expires_at ? new Date(c.expires_at).toLocaleDateString('th-TH') : '-'}</td>
                     <td className="border-b border-gray-200 px-3 py-2">
                       {c.liff_url ? (
-                        <a href={c.liff_url} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:underline">
-                          เปิด
-                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(c.liff_url).then(() => {
+                              setCopiedCardId(c.id);
+                              setTimeout(() => setCopiedCardId(null), 2000);
+                            });
+                          }}
+                          className="text-violet-600 hover:underline"
+                        >
+                          {copiedCardId === c.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                        </button>
                       ) : (
                         '-'
                       )}
