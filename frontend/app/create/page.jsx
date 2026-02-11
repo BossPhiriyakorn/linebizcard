@@ -569,7 +569,7 @@ function CreateContent() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] hover:-translate-y-0.5 hover:shadow-lg disabled:bg-gray-400 disabled:translate-y-0 disabled:shadow-none"
+                  className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:bg-gray-400 disabled:cursor-not-allowed"
                   disabled={loading || !form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
                 >
                   {loading ? (loadingMsg || 'กำลังสร้าง...') : 'สร้างการ์ด'}
