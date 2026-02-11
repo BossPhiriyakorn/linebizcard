@@ -203,7 +203,7 @@ function RegisterLineContent() {
                   className="flex-1 overflow-y-auto whitespace-pre-wrap px-4 py-3 text-sm text-gray-700"
                   style={{ maxHeight: '50vh' }}
                 >
-                  {modalContent || 'ไม่มีเนื้อหา'}
+                  {(typeof modalContent === 'string' ? modalContent.replace(/ข้าพเจา/g, 'ข้าพเจ้า') : modalContent) || 'ไม่มีเนื้อหา'}
                 </div>
                 <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
                   {!canAgree && (
