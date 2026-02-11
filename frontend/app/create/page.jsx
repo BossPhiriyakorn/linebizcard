@@ -24,6 +24,7 @@ function CreateContent() {
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
+  const [debugLogs, setDebugLogs] = useState([]); // เก็บ log แสดงบนหน้าจอ
   const [createdSuccess, setCreatedSuccess] = useState(false);
 
   useEffect(() => {
@@ -70,6 +71,13 @@ function CreateContent() {
   const showAlertMsg = (msg, type) => {
     setAlert({ show: true, msg, type });
     setTimeout(() => setAlert((p) => ({ ...p, show: false })), 5000);
+  };
+
+  // เพิ่ม log ที่แสดงบนหน้าจอ (สำหรับมือถือ)
+  const addDebugLog = (msg) => {
+    const timestamp = new Date().toLocaleTimeString('th-TH', { hour12: false });
+    setDebugLogs((prev) => [...prev, `[${timestamp}] ${msg}`]);
+    console.log(`[Create] ${msg}`); // ยังเก็บใน console ด้วย
   };
 
   /**
@@ -200,37 +208,43 @@ function CreateContent() {
     setLoading(true);
     setAlert({ show: false, msg: '', type: 'error' });
     
+    // ล้าง log เก่า
+    setDebugLogs([]);
+    
     // ขั้นตอนที่ 1: ลดขนาดรูป (ถ้าใหญ่กว่า 2MB)
     let processedImage = image1;
     const originalSizeMB = (image1.size / 1024 / 1024).toFixed(2);
     
+    addDebugLog(`เริ่มต้น: ${image1.name} (${originalSizeMB}MB)`);
+    
     if (image1.size > 2 * 1024 * 1024) {
       try {
         setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
-        console.log(`[Create] เริ่มลดขนาดรูป: ${image1.name} (${originalSizeMB}MB)`);
+        addDebugLog(`เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB)`);
         
         processedImage = await compressImage(image1, 0.75, 2);
         
         const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
-        console.log(`[Create] ลดขนาดรูปเสร็จ: ${compressedSizeMB}MB`);
+        const reduction = ((1 - processedImage.size / image1.size) * 100).toFixed(0);
+        addDebugLog(`ลดขนาดเสร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%)`);
         setLoadingMsg(`ลดขนาดรูปเสร็จ (${originalSizeMB}MB → ${compressedSizeMB}MB)`);
         
         // รอ 500ms ให้เห็นข้อความ
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
-        console.error('[Create] ลดขนาดรูปไม่สำเร็จ:', err);
+        addDebugLog(`ลดขนาดไม่สำเร็จ: ${err.message} - ใช้ไฟล์เดิม`);
         // ถ้า compress ไม่ได้ ใช้ไฟล์เดิม
         processedImage = image1;
         setLoadingMsg('ลดขนาดรูปไม่สำเร็จ ใช้ไฟล์เดิม');
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } else {
-      console.log(`[Create] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด`);
+      addDebugLog(`ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< 2MB)`);
     }
     
     // ขั้นตอนที่ 2: อัปโหลดและสร้างการ์ด
     setLoadingMsg('กำลังอัปโหลดและสร้างการ์ด...');
-    console.log('[Create] เริ่มอัปโหลด:', processedImage.name, `(${(processedImage.size / 1024 / 1024).toFixed(2)}MB)`);
+    addDebugLog(`เริ่มอัปโหลด: ${processedImage.name} (${(processedImage.size / 1024 / 1024).toFixed(2)}MB)`);
     
     const fd = new FormData();
     fd.append('template_id', selectedTemplate.id);
@@ -247,7 +261,7 @@ function CreateContent() {
         body: fd,
       });
       
-      console.log('[Create] ได้รับ response:', res.status, res.statusText);
+      addDebugLog(`ได้รับ response: ${res.status} ${res.statusText}`);
       
       if (handleAuthResponse(res)) {
         setLoading(false);
@@ -264,7 +278,7 @@ function CreateContent() {
         if (status === 408 || status === 504) msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
         else if (status === 413) msg = 'ไฟล์ใหญ่เกินไป ลองเลือกรูปจากอัลบั้มหรือลดขนาดรูป';
         else if (!res.ok) msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
-        console.error('[Create] Parse error:', status, text?.substring(0, 200));
+        addDebugLog(`❌ Parse error: ${status} ${text?.substring(0, 100)}`);
         showAlertMsg(msg, 'error');
         setLoading(false);
         setLoadingMsg('');
@@ -272,11 +286,12 @@ function CreateContent() {
       }
       
       if (data.success) {
-        console.log('[Create] สร้างการ์ดสำเร็จ:', data.data?.unique_id || data.data?.id);
+        const cardId = data.data?.unique_id || data.data?.id || 'unknown';
+        addDebugLog(`✅ สร้างการ์ดสำเร็จ: ${cardId}`);
         setLoadingMsg('สร้างการ์ดสำเร็จ! กำลังไปหน้าการ์ดของฉัน...');
         
-        // รอ 800ms ให้เห็นข้อความ
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // รอ 1 วินาทีให้เห็น log
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         setLoading(false);
         setLoadingMsg('');
@@ -284,13 +299,13 @@ function CreateContent() {
         router.push('/my-cards?created=1');
         return;
       } else {
-        console.error('[Create] สร้างไม่สำเร็จ:', data.message);
+        addDebugLog(`❌ สร้างไม่สำเร็จ: ${data.message}`);
         showAlertMsg(data.message || 'สร้างไม่สำเร็จ', 'error');
         setLoading(false);
         setLoadingMsg('');
       }
     } catch (err) {
-      console.error('[Create] Exception:', err);
+      addDebugLog(`❌ Exception: ${err.message}`);
       const msg = err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม';
       showAlertMsg(msg, 'error');
       setLoading(false);
@@ -528,6 +543,27 @@ function CreateContent() {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       <span>{loadingMsg}</span>
+                    </div>
+                  </div>
+                )}
+                {debugLogs.length > 0 && (
+                  <div className="mt-3 rounded-lg bg-gray-50 border border-gray-300 px-3 py-2 max-h-[200px] overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-gray-700">📋 Log การทำงาน</span>
+                      <button
+                        type="button"
+                        onClick={() => setDebugLogs([])}
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        ล้าง
+                      </button>
+                    </div>
+                    <div className="space-y-1 font-mono text-xs text-gray-700">
+                      {debugLogs.map((log, idx) => (
+                        <div key={idx} className="whitespace-pre-wrap break-words">
+                          {log}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
