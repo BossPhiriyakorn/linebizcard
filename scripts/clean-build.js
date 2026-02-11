@@ -28,7 +28,7 @@ dirsToClean.forEach((dir) => {
 });
 
 console.log('\n📦 Running npm run build...');
-const env = { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=2048' };
+const env = { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=1536' };
 const result = spawnSync('npm', ['run', 'build'], {
   cwd: rootDir,
   stdio: 'inherit',

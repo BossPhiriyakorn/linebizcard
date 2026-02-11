@@ -96,25 +96,27 @@ npm run dev
 
 ### Build (Production) — เซิร์ฟเวอร์หรือเครื่อง RAM น้อย
 
-ติดตั้ง dependencies ทั้ง root และ frontend **ครั้งเดียว** (ไม่รันในคำสั่ง build):
+โปรเจกต์ใช้ **npm workspaces** (root + frontend): ติดตั้งและ build จากโฟลเดอร์รากเท่านั้น
+
+ติดตั้ง dependencies **ครั้งเดียว** (workspaces จะติดตั้งทั้ง root และ frontend ให้):
 
 ```bash
 npm run install:all
 ```
 
-จากนั้นรัน build (ใช้ memory 2GB เพื่อลดโอกาสค้างตอน "Creating an optimized production build"):
+หรือ `npm install` จากโฟลเดอร์ราก
+
+จากนั้นรัน build (ใช้ memory 1.5GB เพื่อลดโอกาสค้างตอน "Creating an optimized production build"):
 
 ```bash
 npm run build
 ```
 
-หลัง build สำเร็จ รัน `npm run start` ได้เลย
+หรือ build แบบล้าง cache ก่อน: `npm run build:clean`
 
-Frontend (Next.js) — แยกโฟลเดอร์ `frontend/`:
+หลัง build สำเร็จ รัน `npm start` ได้เลย
 
-```bash
-cd frontend && npm install && npm run dev
-```
+**หมายเหตุ:** ไม่ต้องรัน `cd frontend && npm install` แยก — ใช้ `npm install` ที่รากเพียงครั้งเดียว
 
 Server หลักจะรันที่ `http://localhost:3000` (ปรับตาม `PORT` และ `BASE_URL` ใน `.env`)
 
