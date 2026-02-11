@@ -29,8 +29,10 @@ app.use((req, res, next) => {
 });
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// เพิ่ม limit สำหรับ body parser (ป้องกัน 413 จาก Express)
+// หมายเหตุ: multer จัดการ multipart/form-data แยก แต่ตั้งค่าไว้เพื่อความปลอดภัย
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const dirs = ['uploads/images', 'uploads/cms/settings', 'uploads/cms/qr', 'json'];
 dirs.forEach((dir) => { fs.ensureDirSync(dir); });

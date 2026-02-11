@@ -100,27 +100,19 @@ function CreateContent() {
   };
 
   /**
-   * ลดขนาดไฟล์รูป (compress) โดยไม่เปลี่ยนความละเอียด (dimensions)
+   * ลดขนาดไฟล์รูป (compress) ทุกรูป ไม่มีขั้นต่ำ — โดยไม่เปลี่ยนความละเอียด (dimensions)
+   * ยกเว้น HEIC/HEIF ที่ browser อ่านไม่ได้ ให้ server จัดการ
    * @param {File} file - ไฟล์รูปต้นฉบับ
    * @param {number} quality - คุณภาพ 0.0-1.0 (0.75 = 75%)
-   * @param {number} maxSizeMB - ถ้าไฟล์ใหญ่กว่านี้ค่อย compress (ดึงจาก API config)
-   * @returns {Promise<File>} - ไฟล์ที่ compress แล้ว
+   * @returns {Promise<File>} - ไฟล์ที่ compress แล้ว (หรือไฟล์เดิมถ้า HEIC)
    */
-  const compressImage = async (file, quality = 0.75, maxSizeMB = compressThresholdMB) => {
+  const compressImage = async (file, quality = 0.75) => {
     // ถ้าเป็น HEIF/HEIC ไม่ต้อง compress (Browser ไม่รองรับ - ให้ server จัดการ)
     const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || 
                    file.name.toLowerCase().endsWith('.heic') || 
                    file.name.toLowerCase().endsWith('.heif');
     if (isHeic) {
       const msg = `[Compress] ข้าม HEIF/HEIC (${file.name}) - ให้ server จัดการ`;
-      console.log(msg);
-      sendLogToServer('info', msg);
-      return file;
-    }
-    
-    // ถ้าไฟล์เล็กกว่า maxSizeMB ไม่ต้อง compress
-    if (file.size <= maxSizeMB * 1024 * 1024) {
-      const msg = `[Compress] ไฟล์ขนาด ${(file.size / 1024 / 1024).toFixed(2)}MB ไม่ต้อง compress (< ${maxSizeMB}MB)`;
       console.log(msg);
       sendLogToServer('info', msg);
       return file;
@@ -196,6 +188,19 @@ function CreateContent() {
     setForm((f) => ({ ...f, phone: v }));
   };
 
+  /**
+   * ตรวจสอบว่ารูปน่าจะมาจากกล้องมือถือหรือไม่
+   * รูปจากกล้องมักมีชื่อไฟล์ที่ขึ้นต้นด้วย IMG_, DSC_, หรือมี pattern พิเศษ
+   */
+  const isLikelyCameraPhoto = (file) => {
+    if (!file || !file.name) return false;
+    const name = file.name.toUpperCase();
+    // รูปจากกล้องมักมีชื่อไฟล์ที่ขึ้นต้นด้วย IMG_, DSC_, PXL_, หรือมี pattern พิเศษ
+    return /^(IMG_|DSC_|PXL_|PHOTO_|CAMERA_|Screenshot|Photo)/.test(name) || 
+           /^\d{8}_\d{6}/.test(name) || // Pattern: YYYYMMDD_HHMMSS
+           /^[A-Z]{3,4}-\d{4}/.test(name); // Pattern: ABC-1234
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files?.[0] || null;
     if (file && file.size === 0) {
@@ -203,6 +208,15 @@ function CreateContent() {
       e.target.value = '';
       return;
     }
+    
+    // Log ข้อมูลไฟล์เพื่อ debug
+    if (file) {
+      const isCamera = isLikelyCameraPhoto(file);
+      const fileInfo = `[File-Info] name: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)}MB, type: ${file.type}, likelyCamera: ${isCamera}`;
+      console.log(fileInfo);
+      sendLogToServer('info', fileInfo);
+    }
+    
     setImage1(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -242,46 +256,33 @@ function CreateContent() {
     setLoading(true);
     setAlert({ show: false, msg: '', type: 'error' });
     
-    // ขั้นตอนที่ 1: ลดขนาดรูป (ถ้าใหญ่กว่า compressThresholdMB)
+    // ขั้นตอนที่ 1: ลดขนาดรูปทุกรูป ไม่มีขั้นต่ำ (ทุกแบบ ทุกแพลตฟอร์ม) — ยกเว้น HEIC ให้ server จัดการ
     let processedImage = image1;
     const originalSizeMB = (image1.size / 1024 / 1024).toFixed(2);
-    const thresholdBytes = compressThresholdMB * 1024 * 1024;
-    
-    const startMsg = `[Create-Frontend] เริ่มต้น: ${image1.name} (${originalSizeMB}MB)`;
+    const startMsg = `[Create-Frontend] เริ่มต้น: ${image1.name} (${originalSizeMB}MB) — ลดขนาดทุกรูป (ไม่มีขั้นต่ำ)`;
     console.log(startMsg);
     sendLogToServer('info', startMsg);
-    
-    if (image1.size > thresholdBytes) {
-      try {
-        setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
-        const compressStartMsg = `[Create-Frontend] เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB, threshold: ${compressThresholdMB}MB)`;
-        console.log(compressStartMsg);
-        sendLogToServer('info', compressStartMsg);
-        
-        processedImage = await compressImage(image1, 0.75, compressThresholdMB);
-        
-        const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
-        const reduction = ((1 - processedImage.size / image1.size) * 100).toFixed(0);
-        const compressDoneMsg = `[Create-Frontend] ลดขนาดเสร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%)`;
-        console.log(compressDoneMsg);
-        sendLogToServer('info', compressDoneMsg);
-        setLoadingMsg(`ลดขนาดรูปเสร็จ (${originalSizeMB}MB → ${compressedSizeMB}MB)`);
-        
-        // รอ 500ms ให้เห็นข้อความ
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (err) {
-        const errorMsg = `[Create-Frontend] ลดขนาดไม่สำเร็จ: ${err.message} - ใช้ไฟล์เดิม`;
-        console.error(errorMsg);
-        sendLogToServer('error', errorMsg);
-        // ถ้า compress ไม่ได้ ใช้ไฟล์เดิม
-        processedImage = image1;
-        setLoadingMsg('ลดขนาดรูปไม่สำเร็จ ใช้ไฟล์เดิม');
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    } else {
-      const skipMsg = `[Create-Frontend] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< ${compressThresholdMB}MB)`;
-      console.log(skipMsg);
-      sendLogToServer('info', skipMsg);
+
+    try {
+      setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
+      sendLogToServer('info', `[Create-Frontend] เริ่มลดขนาดรูปทุกรูป: ${image1.name} (${originalSizeMB}MB)`);
+      processedImage = await compressImage(image1, 0.75);
+      const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
+      const reduction = processedImage.size < image1.size
+        ? ((1 - processedImage.size / image1.size) * 100).toFixed(0)
+        : '0';
+      const compressDoneMsg = `[Create-Frontend] ลดขนาดเสร็จ: ${originalSizeMB}MB → ${compressedSizeMB}MB (ลด ${reduction}%)`;
+      console.log(compressDoneMsg);
+      sendLogToServer('info', compressDoneMsg);
+      setLoadingMsg(`ลดขนาดรูปเสร็จ (${originalSizeMB}MB → ${compressedSizeMB}MB)`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (err) {
+      const errorMsg = `[Create-Frontend] ลดขนาดไม่สำเร็จ: ${err.message} - ใช้ไฟล์เดิม`;
+      console.error(errorMsg);
+      sendLogToServer('error', errorMsg);
+      processedImage = image1;
+      setLoadingMsg('ลดขนาดรูปไม่สำเร็จ ใช้ไฟล์เดิม');
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     // ขั้นตอนที่ 2: อัปโหลดและสร้างการ์ด
@@ -320,10 +321,19 @@ function CreateContent() {
         data = text ? JSON.parse(text) : {};
       } catch {
         const status = res.status;
+        const fileSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
         let msg = res.ok ? 'ตอบกลับไม่ถูกต้อง' : 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์';
-        if (status === 408 || status === 504) msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
-        else if (status === 413) msg = 'ไฟล์ใหญ่เกินไป ลองเลือกรูปจากอัลบั้มหรือลดขนาดรูป';
-        else if (!res.ok) msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
+        if (status === 408 || status === 504) {
+          msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
+        } else if (status === 413) {
+          // 413 Request Entity Too Large - ไฟล์ใหญ่เกิน limit ของ server/reverse proxy
+          msg = `ไฟล์ใหญ่เกินไป (${fileSizeMB}MB) — ระบบกำลังลดขนาดอัตโนมัติ กรุณาลองใหม่อีกครั้ง หรือเลือกรูปที่เล็กกว่า`;
+          const error413Msg = `[Create-Frontend] ❌ 413 Request Entity Too Large: ไฟล์ ${fileSizeMB}MB เกิน limit (isCamera: ${isLikelyCameraPhoto(image1)}, originalSize: ${originalSizeMB}MB)`;
+          console.error(error413Msg);
+          sendLogToServer('error', error413Msg);
+        } else if (!res.ok) {
+          msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
+        }
         const parseErrorMsg = `[Create-Frontend] ❌ Parse error: ${status} ${text?.substring(0, 100)}`;
         console.error(parseErrorMsg);
         sendLogToServer('error', parseErrorMsg);
