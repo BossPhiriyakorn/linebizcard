@@ -1,0 +1,9 @@
+fix: camera photo upload - remove resize/rotate, improve error messages, add troubleshooting
+
+- imageToWebp: remove auto-rotate and resize - convert to WebP only
+- create page: improve error messages for 413/504/server errors with hints
+- cardController: update comment to reflect no resize/rotate
+- DEPLOY_VERIFY: add detailed troubleshooting section 4.5 for camera photo issues
+  - Common causes: Nginx limits (client_max_body_size, timeout), Sharp/libvips differences, memory
+  - Step-by-step diagnostic process with commands
+  - Reorder by likelihood (Nginx 413 most common)

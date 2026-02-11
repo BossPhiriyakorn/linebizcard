@@ -117,7 +117,7 @@ async function createCard(req, res) {
             if (row) profile = { email: row.email };
         }
 
-        // แปลงรูปที่อัปโหลดเป็น WebP (รีไซส์ถ้าเกิน 2047x2048) — รองรับ JPEG, PNG, HEIC/iPhone ฯลฯ
+        // แปลงรูปที่อัปโหลดเป็น WebP เท่านั้น (ไม่หมุนรูป ไม่รีไซส์) — รองรับ JPEG, PNG, HEIC/iPhone ฯลฯ
         if (req.file || req.files) {
             try {
                 await convertUploadedToWebp(req);

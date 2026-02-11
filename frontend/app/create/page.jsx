@@ -150,7 +150,12 @@ function CreateContent() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        showAlertMsg(res.ok ? 'ตอบกลับไม่ถูกต้อง' : (res.status === 408 ? 'ใช้เวลานานเกินไป กรุณาลองใหม่' : 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์'), 'error');
+        const status = res.status;
+        let msg = res.ok ? 'ตอบกลับไม่ถูกต้อง' : 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์';
+        if (status === 408 || status === 504) msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ (ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม)';
+        else if (status === 413) msg = 'ไฟล์ใหญ่เกินไป ลองเลือกรูปจากอัลบั้มหรือลดขนาดรูป';
+        else if (!res.ok) msg = 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้มหรือถ่ายใหม่แล้วเลือกจากอัลบั้ม';
+        showAlertMsg(msg, 'error');
         setLoading(false);
         return;
       }
@@ -164,7 +169,8 @@ function CreateContent() {
         setLoading(false);
       }
     } catch (err) {
-      showAlertMsg(err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+      const msg = err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ — ถ้าเลือกรูปจากกล้อง ลองใช้รูปจากอัลบั้ม';
+      showAlertMsg(msg, 'error');
       setLoading(false);
     }
   };

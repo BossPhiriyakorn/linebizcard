@@ -220,6 +220,71 @@ pm2 logs linebizcard --lines 30
 
 ---
 
+## 4.5 แก้ปัญหา: รูปจากกล้องมือถือสร้างการ์ดไม่ได้บนเซิร์ฟเวอร์ (ขึ้น "เกิดปัญหาจากเซิร์ฟเวอร์")
+
+เมื่อกดเลือกรูปที่ถ่ายจากกล้องมือถือแล้วกดสร้างการ์ด แล้วขึ้นข้อความว่าเกิดปัญหาจากเซิร์ฟเวอร์ (เฉพาะบนเซิร์ฟเวอร์ deploy แล้ว ไม่เกิดบนเครื่องตัวเอง) — **โดยเฉพาะถ้าเป็นทุกรูปจากกล้องมือถือทุกรุ่น (ไม่ใช่แค่ iPhone)** สาเหตุที่เป็นไปได้และวิธีแก้:
+
+### สาเหตุหลักที่พบบ่อย (เรียงตามความน่าจะเป็น)
+
+| ลำดับ | สาเหตุ | อาการใน log / การตอบกลับ | วิธีแก้ |
+|------|--------|----------------------------|--------|
+| **1** | **Nginx จำกัดขนาดอัปโหลด (413)** | Request **ไม่ถึง Express** — ไม่เห็น `[create-card] POST /api/create-card reached` ใน pm2 logs; หรือ Nginx error log มี "client intended to send too large body" | เพิ่ม `client_max_body_size 50m;` ใน Nginx (ดูมาตรา 1.2–1.3) |
+| **2** | **Nginx/Proxy timeout (504)** | เห็น `[create-card] POST /api/create-card reached` แต่ไม่เห็น `success` หรือ `failure`; อัปโหลด/แปลงรูปใช้เวลานาน — proxy ตัดก่อนแอปตอบ | เพิ่ม `proxy_read_timeout 180s;` และ `proxy_send_timeout 180s;` ใน Nginx |
+| **3** | **Sharp/libvips บนเซิร์ฟเวอร์ต่างจาก Local** | เห็น `[create-card] Convert to WebP failed` พร้อมข้อความ error จาก Sharp (เช่น "unsupported image format", "VipsJpeg: Corrupt JPEG data") | รัน `npm run install:all` บนเซิร์ฟเวอร์ใหม่เพื่อให้ Sharp build ตรงกับ OS; ตรวจว่า Sharp โหลดได้: `node -e "const s=require('sharp'); console.log('Sharp version:', s.versions)"` |
+| **4** | **รูป HEIC (iPhone) — heic-convert ล้มบนเซิร์ฟเวอร์** | เห็น `[create-card] Convert to WebP failed` และข้อความเกี่ยวกับ HEIC/iPhone | ติดตั้ง libheif บนเซิร์ฟเวอร์ (ดูด้านล่าง) หรือให้ผู้ใช้ตั้งค่า iPhone: กล้อง > รูปแบบ > Most Compatible |
+| **5** | **Memory ไม่พอ (OOM)** | Process หลุดหรือ restart หลังอัปโหลด; pm2 logs มี "JavaScript heap out of memory" หรือ process หาย | เพิ่ม RAM หรือลด `MAX_FILE_SIZE` ใน .env (เช่น 10485760 = 10MB) เพื่อบังคับให้ผู้ใช้ลดขนาดรูปก่อนอัปโหลด |
+| **6** | **ไฟล์เสียหรือ metadata ผิดปกติ** | เห็น `[create-card] Convert to WebP failed` พร้อมข้อความเกี่ยวกับ "corrupt", "invalid", "unsupported" | ให้ผู้ใช้ลองบันทึกรูปใหม่ในแอปแก้รูป (เช่น crop/save as new) แล้วอัปโหลดใหม่; หรือลองรูปอื่น |
+
+**ติดตั้ง libheif บน Ubuntu/Debian (เพื่อให้ heic-convert แปลงรูปจาก iPhone ได้):**
+
+```bash
+sudo apt update
+sudo apt install -y libheif-dev
+```
+
+จากนั้นในโฟลเดอร์โปรเจกต์รัน `npm run install:all` (หรือ `npm install`) อีกครั้งเพื่อให้ native module  link กับ libheif ได้
+
+**ขั้นตอนการวินิจฉัยปัญหา (ทำตามลำดับ):**
+
+**1. ตรวจ pm2 logs ว่า request ถึงแอปหรือไม่**
+
+```bash
+pm2 logs linebizcard --lines 50
+```
+
+- **ไม่เห็น** `[create-card] POST /api/create-card reached` เลย → ปัญหาที่ Nginx/proxy (ขนาดอัปโหลด หรือ timeout) — ไปข้อ 2
+- **เห็น** `POST /api/create-card reached` แต่ตามด้วย `Convert to WebP failed` → ปัญหาที่การแปลงรูป (Sharp/libvips หรือ HEIC) — ไปข้อ 3
+- **เห็น** `POST /api/create-card reached` แต่ไม่เห็น `success` หรือ `failure` → ปัญหา timeout หรือ process หลุด — ไปข้อ 4
+
+**2. ตรวจ Nginx error log (ถ้า request ไม่ถึงแอป)**
+
+```bash
+sudo tail -100 /var/log/nginx/error.log | grep -i "client\|body\|timeout"
+```
+
+- เห็น "client intended to send too large body" → เพิ่ม `client_max_body_size 50m;` (มาตรา 1.2–1.3)
+- เห็น "upstream timed out" → เพิ่ม `proxy_read_timeout 180s;` และ `proxy_send_timeout 180s;`
+
+**3. ตรวจข้อความ error จาก Sharp (ถ้าเห็น "Convert to WebP failed")**
+
+ดูข้อความหลัง `Convert to WebP failed:` ใน pm2 logs:
+
+- มี "HEIC", "iPhone", "Most Compatible" → ติดตั้ง libheif (ดูด้านล่าง)
+- มี "unsupported", "VipsJpeg", "corrupt" → Sharp/libvips บนเซิร์ฟเวอร์อาจต่างจาก Local → รัน `npm run install:all` ใหม่บนเซิร์ฟเวอร์
+- มี "out of memory", "heap" → เพิ่ม RAM หรือลด MAX_FILE_SIZE
+
+**4. ตรวจ process status (ถ้า process หลุด)**
+
+```bash
+pm2 list
+pm2 logs linebizcard --err --lines 30
+```
+
+- เห็น "JavaScript heap out of memory" → เพิ่ม RAM
+- Process restart บ่อย → ดู error log ว่ามี unhandled rejection หรือไม่
+
+---
+
 ## 5. ลำดับ Deploy แนะนำ (ทำทุกครั้งหลัง pull)
 
 รันตามลำดับ — **หลัง build ใช้ `pm2 restart` เท่านั้น ไม่รัน `npm start`** (ดูมาตรา 0.2):
@@ -251,6 +316,8 @@ node -e "const h=require('heic-convert'); console.log('heic-convert OK', typeof 
 ```
 
 ถ้า error แปลว่าโหลดไม่ได้ (เช่น build ไม่ตรง OS) — ต้องรัน `npm install` บนเครื่องเซิร์ฟเวอร์ใหม่
+
+**รูปจาก iPhone (HEIC):** บน Linux เซิร์ฟเวอร์บางตัวต้องติดตั้ง libheif ก่อน heic-convert จะแปลง HEIC ได้ (ดูมาตรา 4.5)
 
 ---
 

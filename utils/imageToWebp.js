@@ -20,11 +20,10 @@ async function isHeicByMagicBytes(absolutePath) {
 }
 
 /**
- * แปลง input (path หรือ buffer) เป็น WebP และเขียนไฟล์ (ไม่รีไซส์)
- * ใช้ .rotate() ไม่ใส่มุม = อ่าน EXIF Orientation จากรูปกล้องมือถือแล้วหมุนให้ตรง (รองรับรูปถ่ายจากกล้อง/มือถือทั้งถ่ายสดและรูปเก่า)
+ * แปลง input (path หรือ buffer) เป็น WebP เท่านั้น (ไม่หมุนรูป ไม่รีไซส์)
  */
 async function toWebpWithResize(input, outputPath) {
-    await sharp(input).rotate().webp({ quality: 85 }).toFile(outputPath);
+    await sharp(input).webp({ quality: 85 }).toFile(outputPath);
 }
 
 /**
