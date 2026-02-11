@@ -584,33 +584,32 @@ function CreateContent() {
                 </div>
               </div>
 
-              <div className="flex gap-2.5">
-                <button
-                  type="button"
-                  className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-5 py-3 font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
-                  onClick={handleBackToTemplates}
-                >
-                  ย้อนกลับ
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={loading || !form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
-                >
-                  {loading ? (loadingMsg || 'กำลังสร้าง...') : 'สร้างการ์ด'}
-                </button>
-                {loading && loadingMsg && (
-                  <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5 text-sm text-blue-800">
-                    <div className="flex items-center gap-2">
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>{loadingMsg}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {loading ? (
+                <div className="flex flex-col items-center justify-center gap-3 rounded-xl bg-gray-50 border-2 border-gray-200 py-8 px-4">
+                  <svg className="animate-spin h-8 w-8 text-[#1DB446]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="text-sm font-medium text-gray-700">{loadingMsg || 'กำลังสร้างการ์ด...'}</p>
+                </div>
+              ) : (
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-5 py-3 font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                    onClick={handleBackToTemplates}
+                  >
+                    ย้อนกลับ
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    disabled={!form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
+                  >
+                    สร้างการ์ด
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>
