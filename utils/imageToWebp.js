@@ -21,9 +21,10 @@ async function isHeicByMagicBytes(absolutePath) {
 
 /**
  * แปลง input (path หรือ buffer) เป็น WebP และเขียนไฟล์ (ไม่รีไซส์)
+ * ใช้ .rotate() ไม่ใส่มุม = อ่าน EXIF Orientation จากรูปกล้องมือถือแล้วหมุนให้ตรง (รองรับรูปถ่ายจากกล้อง/มือถือทั้งถ่ายสดและรูปเก่า)
  */
 async function toWebpWithResize(input, outputPath) {
-    await sharp(input).webp({ quality: 85 }).toFile(outputPath);
+    await sharp(input).rotate().webp({ quality: 85 }).toFile(outputPath);
 }
 
 /**
@@ -46,9 +47,9 @@ async function heicToJpegBuffer(absolutePath) {
     }
 }
 
-// รองรับทุกรูปแบบด้านล่าง (อัปโหลด + แปลง): Sharp โดยตรง = jpeg, png, gif, webp, avif, tiff. HEIC/HEIF = ใช้ heic-convert (รวม .jpg ที่เนื้อหาเป็น HEIC จาก iPhone). BMP/ICO รับอัปโหลดได้แต่ไม่แปลง
+// รองรับทุกรูปแบบด้านล่าง (อัปโหลด + แปลง): Sharp โดยตรง = jpeg, png, gif, webp, avif, tiff. HEIC/HEIF = ใช้ heic-convert. BMP/ICO/DNG รับอัปโหลดได้แต่ไม่รองรับการแปลงเป็น WebP (DNG/RAW ต้องแปลงเป็น JPEG/PNG ก่อน)
 const SUPPORTED_CONVERT_EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.tiff', '.tif', '.heic', '.heif'];
-const UNSUPPORTED_CONVERT_EXT = ['.bmp', '.ico'];
+const UNSUPPORTED_CONVERT_EXT = ['.bmp', '.ico', '.dng'];
 
 /**
  * แปลงไฟล์รูปที่อัปโหลดเป็น WebP (ไม่รีไซส์) แล้วลบไฟล์เดิม
@@ -61,6 +62,10 @@ async function convertToWebp(inputPath) {
     const exists = await fs.pathExists(absolutePath);
     if (!exists) {
         throw new Error('ไม่พบไฟล์รูป: ' + absolutePath);
+    }
+    const stat = await fs.stat(absolutePath);
+    if (!stat || stat.size === 0) {
+        throw new Error('ไฟล์รูปว่างหรือเสีย (ขนาด 0 ไบต์) — ลองบันทึกรูปในเครื่องแล้วเลือกจากอัลบั้ม หรือถ่ายใหม่แล้วเลือกจากอัลบั้ม');
     }
     const ext = path.extname(absolutePath).toLowerCase();
     const dir = path.dirname(absolutePath);
@@ -75,8 +80,9 @@ async function convertToWebp(inputPath) {
     }
 
     if (UNSUPPORTED_CONVERT_EXT.includes(ext)) {
+        const hint = ext === '.dng' ? 'รูปแบบ RAW/DNG (รวม Apple ProRAW) ต้องแปลงเป็น JPEG หรือ PNG ในเครื่องก่อนอัปโหลด ' : '';
         throw new Error(
-            `รูปแบบไฟล์ ${ext} ไม่รองรับการแปลงเป็น WebP กรุณาแปลงเป็น JPEG หรือ PNG ก่อนอัปโหลด (รองรับการแปลง: ${SUPPORTED_CONVERT_EXT.join(', ')})`
+            `${hint}รูปแบบไฟล์ ${ext} ไม่รองรับการแปลงเป็น WebP กรุณาแปลงเป็น JPEG หรือ PNG ก่อนอัปโหลด (รองรับการแปลง: ${SUPPORTED_CONVERT_EXT.join(', ')})`
         );
     }
 

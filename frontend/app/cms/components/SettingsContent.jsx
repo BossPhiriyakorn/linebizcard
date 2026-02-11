@@ -161,7 +161,7 @@ export default function SettingsContent() {
             )}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
               className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-violet-700 file:px-4 file:py-2 file:font-medium file:text-white"
               onChange={uploadFile('/upload/settings/logo', setUploadingLogo, 'login_logo_url')}
               disabled={uploadingLogo}
@@ -178,7 +178,7 @@ export default function SettingsContent() {
             )}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
               className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-violet-700 file:px-4 file:py-2 file:font-medium file:text-white"
               onChange={uploadFile('/upload/settings/bg', setUploadingBg, 'login_bg_image_url')}
               disabled={uploadingBg}
@@ -303,7 +303,7 @@ export default function SettingsContent() {
             )}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
               className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-violet-700 file:px-4 file:py-2 file:font-medium file:text-white"
               onChange={uploadFile('/upload/qr', setUploadingQr, 'qr_payment_qr_image_url')}
               disabled={uploadingQr}

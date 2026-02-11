@@ -126,7 +126,7 @@ function PayByQrContent() {
             {slipError && <p className="mb-2 text-sm text-red-600">{slipError}</p>}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
               onChange={(e) => {
                 const file = e.target.files?.[0] || null;
                 setSlipError('');

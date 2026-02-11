@@ -363,7 +363,7 @@ function CreateContent() {
                   <input
                     id="create-image1"
                     type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+                    accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
                     onChange={handleImageChange}
                     className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white"
                   />

@@ -35,11 +35,12 @@ const storage = multer.diskStorage({
 });
 
 // File filter (การ์ด + สลิป): รองรับทุกรูปแบบรูปภาพ — ตรวจจากนามสกุลหรือ MIME (กรณีไม่มีนามสกุล/แพลตฟอร์มต่างกัน)
-const DEFAULT_IMAGE_EXT = 'jpg,jpeg,png,gif,webp,heic,heif,bmp,tiff,tif,ico,avif';
+const DEFAULT_IMAGE_EXT = 'jpg,jpeg,png,gif,webp,heic,heif,bmp,tiff,tif,ico,avif,dng';
 const MIME_TO_EXT = {
     'image/jpeg': 'jpeg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
     'image/heic': 'heic', 'image/heif': 'heif', 'image/x-heic': 'heic', 'image/avif': 'avif',
-    'image/tiff': 'tiff', 'image/bmp': 'bmp', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico'
+    'image/tiff': 'tiff', 'image/bmp': 'bmp', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico',
+    'image/x-adobe-dng': 'dng', 'image/dng': 'dng'
 };
 const fileFilter = (req, file, cb) => {
     const envTypes = (process.env.ALLOWED_FILE_TYPES || '').trim();
@@ -91,7 +92,7 @@ const cmsQrDir = path.join(process.cwd(), 'uploads/cms/qr');
 fs.ensureDirSync(cmsSettingsDir);
 fs.ensureDirSync(cmsQrDir);
 
-const cmsAllowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'ico', 'avif'];
+const cmsAllowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif', 'ico', 'avif', 'dng'];
 const cmsFileFilter = (req, file, cb) => {
     const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/^\./, '');
     if (cmsAllowedExt.includes(ext)) {

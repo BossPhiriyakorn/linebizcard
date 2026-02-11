@@ -163,7 +163,7 @@ export default function EditCardPage() {
                   <div className="mb-6 rounded-xl border-2 border-gray-200 bg-gray-50 p-4 md:p-5">
                     <div className="mb-5">
                       <label htmlFor="edit-image1" className={labelClass}>รูปภาพ</label>
-                      <input id="edit-image1" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif" onChange={handleImageChange} className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white" />
+                      <input id="edit-image1" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif" onChange={handleImageChange} className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white" />
                       <small className="mt-1 block text-sm italic text-gray-500">เว้นว่างไว้ถ้าไม่เปลี่ยนรูป รองรับ JPG, PNG, GIF, WebP, HEIC (iPhone)</small>
                       {imagePreviewUrl && (
                         <div className="mt-3 w-full overflow-hidden rounded-lg bg-gray-100">
