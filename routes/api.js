@@ -130,6 +130,32 @@ router.get('/liff-login-id', (req, res) => {
     });
 });
 
+// Config endpoint: ส่งค่าการตั้งค่าสำหรับ frontend (ขนาดไฟล์สูงสุด, compress threshold)
+router.get('/config', (req, res) => {
+    try {
+        const MAX_FILE_SIZE_DEFAULT = 1073741824; // 1GB
+        const COMPRESS_THRESHOLD_MB_DEFAULT = 2; // 2MB
+        
+        const maxFileSize = parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT;
+        const compressThresholdMB = parseInt(process.env.COMPRESS_THRESHOLD_MB, 10) || COMPRESS_THRESHOLD_MB_DEFAULT;
+        
+        res.json({
+            success: true,
+            data: {
+                maxFileSize: maxFileSize,
+                maxFileSizeMB: Math.round(maxFileSize / 1024 / 1024),
+                compressThresholdMB: compressThresholdMB
+            }
+        });
+    } catch (err) {
+        console.error('Config endpoint error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'เกิดข้อผิดพลาดในการดึงค่าการตั้งค่า'
+        });
+    }
+});
+
 // Debug Log Endpoint (สำหรับ frontend ส่ง log มาแสดงใน pm2 logs)
 router.post('/debug-log', (req, res) => {
     try {

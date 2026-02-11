@@ -25,6 +25,7 @@ function CreateContent() {
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
   const [createdSuccess, setCreatedSuccess] = useState(false);
+  const [compressThresholdMB, setCompressThresholdMB] = useState(2); // ค่า default จนกว่าจะดึงจาก API
 
   useEffect(() => {
     const urlToken = searchParams.get('token');
@@ -36,6 +37,19 @@ function CreateContent() {
       router.replace('/liff/login');
       return;
     }
+    
+    // ดึงค่าการตั้งค่าจาก API
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data && data.data.compressThresholdMB) {
+          setCompressThresholdMB(data.data.compressThresholdMB);
+        }
+      })
+      .catch(() => {
+        // Silent fail - ใช้ค่า default
+      });
+    
     fetch('/api/templates', { headers: getHeaders() })
       .then((r) => (handleAuthResponse(r) ? null : r.json()))
       .then((data) => {
@@ -89,10 +103,10 @@ function CreateContent() {
    * ลดขนาดไฟล์รูป (compress) โดยไม่เปลี่ยนความละเอียด (dimensions)
    * @param {File} file - ไฟล์รูปต้นฉบับ
    * @param {number} quality - คุณภาพ 0.0-1.0 (0.75 = 75%)
-   * @param {number} maxSizeMB - ถ้าไฟล์ใหญ่กว่านี้ค่อย compress (default 2MB)
+   * @param {number} maxSizeMB - ถ้าไฟล์ใหญ่กว่านี้ค่อย compress (ดึงจาก API config)
    * @returns {Promise<File>} - ไฟล์ที่ compress แล้ว
    */
-  const compressImage = async (file, quality = 0.75, maxSizeMB = 2) => {
+  const compressImage = async (file, quality = 0.75, maxSizeMB = compressThresholdMB) => {
     // ถ้าเป็น HEIF/HEIC ไม่ต้อง compress (Browser ไม่รองรับ - ให้ server จัดการ)
     const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || 
                    file.name.toLowerCase().endsWith('.heic') || 
@@ -228,22 +242,23 @@ function CreateContent() {
     setLoading(true);
     setAlert({ show: false, msg: '', type: 'error' });
     
-    // ขั้นตอนที่ 1: ลดขนาดรูป (ถ้าใหญ่กว่า 2MB)
+    // ขั้นตอนที่ 1: ลดขนาดรูป (ถ้าใหญ่กว่า compressThresholdMB)
     let processedImage = image1;
     const originalSizeMB = (image1.size / 1024 / 1024).toFixed(2);
+    const thresholdBytes = compressThresholdMB * 1024 * 1024;
     
     const startMsg = `[Create-Frontend] เริ่มต้น: ${image1.name} (${originalSizeMB}MB)`;
     console.log(startMsg);
     sendLogToServer('info', startMsg);
     
-    if (image1.size > 2 * 1024 * 1024) {
+    if (image1.size > thresholdBytes) {
       try {
         setLoadingMsg(`กำลังลดขนาดรูป (${originalSizeMB}MB)...`);
-        const compressStartMsg = `[Create-Frontend] เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB)`;
+        const compressStartMsg = `[Create-Frontend] เริ่มลดขนาดรูป (ขนาดเดิม ${originalSizeMB}MB, threshold: ${compressThresholdMB}MB)`;
         console.log(compressStartMsg);
         sendLogToServer('info', compressStartMsg);
         
-        processedImage = await compressImage(image1, 0.75, 2);
+        processedImage = await compressImage(image1, 0.75, compressThresholdMB);
         
         const compressedSizeMB = (processedImage.size / 1024 / 1024).toFixed(2);
         const reduction = ((1 - processedImage.size / image1.size) * 100).toFixed(0);
@@ -264,7 +279,7 @@ function CreateContent() {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } else {
-      const skipMsg = `[Create-Frontend] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< 2MB)`;
+      const skipMsg = `[Create-Frontend] ไฟล์ขนาด ${originalSizeMB}MB ไม่ต้องลดขนาด (< ${compressThresholdMB}MB)`;
       console.log(skipMsg);
       sendLogToServer('info', skipMsg);
     }
