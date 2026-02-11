@@ -3,7 +3,12 @@
  * วิธีใช้: node scripts/run-migration.js database/schema-full.sql
  * หรือ: node scripts/setup-database.js (โหลด schema-full.sql โดยตรง)
  */
-require('dotenv').config();
+try {
+    require('dotenv').config();
+} catch (e) {
+    if (e.code !== 'MODULE_NOT_FOUND') throw e;
+    // ไม่มี dotenv — ใช้ตัวแปรสภาพแวดล้อมจากระบบ (เช่น export DB_HOST=...)
+}
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
