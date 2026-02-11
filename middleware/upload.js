@@ -138,6 +138,7 @@ const uploadCmsQr = multer({
 // Error handler middleware
 const handleUploadError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
+        console.error('[upload] MulterError:', err.code, err.message, req.path || req.url);
         if (err.code === 'LIMIT_FILE_SIZE') {
             const maxBytes = parseInt(process.env.MAX_FILE_SIZE, 10) || MAX_FILE_SIZE_DEFAULT;
             const maxMB = Math.round(maxBytes / 1024 / 1024);
@@ -153,6 +154,7 @@ const handleUploadError = (err, req, res, next) => {
         });
     }
     if (err) {
+        console.error('[upload] Error:', err.message || err, req.path || req.url);
         return res.status(400).json({
             success: false,
             message: err.message

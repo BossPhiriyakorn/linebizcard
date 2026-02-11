@@ -79,6 +79,8 @@ async function convertToWebp(inputPath) {
     const outputFilename = `${base}.webp`;
     const outputPath = path.join(dir, outputFilename);
 
+    console.log('[imageToWebp] convert start ext=' + ext + ' file=' + path.basename(absolutePath));
+
     if (ext === '.webp') {
         return path.basename(absolutePath);
     }
@@ -91,12 +93,14 @@ async function convertToWebp(inputPath) {
 
     const isHeicExt = ext === '.heic' || ext === '.heif';
     if (isHeicExt) {
+        console.log('[imageToWebp] HEIC/HEIF path, using heic-convert');
         const jpegBuffer = await heicToJpegBuffer(absolutePath);
         await toWebpWithResize(jpegBuffer, outputPath);
     } else if (ext === '.jpg' || ext === '.jpeg') {
         // รูปจาก iPhone/แอปบางตัวส่งเป็น .jpg แต่เนื้อหาเป็น HEIC — ตรวจจาก magic bytes ก่อน แล้ว fallback ทุกครั้งที่ Sharp ล้มเหลว
         const maybeHeic = await isHeicByMagicBytes(absolutePath);
         if (maybeHeic) {
+            console.log('[imageToWebp] .jpg detected as HEIC by magic bytes, using heic-convert');
             try {
                 const jpegBuffer = await heicToJpegBuffer(absolutePath);
                 await toWebpWithResize(jpegBuffer, outputPath);
@@ -149,6 +153,7 @@ async function convertToWebp(inputPath) {
  */
 async function convertUploadedToWebp(req) {
     const baseDir = req.user && req.user.id != null ? getCustomerUploadDir(req) : (path.isAbsolute(uploadDir) ? uploadDir : path.join(process.cwd(), uploadDir));
+    console.log('[imageToWebp] convertUploadedToWebp start user_id=' + (req.user && req.user.id));
 
     if (req.file) {
         const inputPath = path.join(baseDir, req.file.filename);

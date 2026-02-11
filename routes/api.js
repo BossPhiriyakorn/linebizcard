@@ -95,7 +95,12 @@ router.get('/templates/:id', templateController.getTemplateById);
 
 // Cards (ต้อง authenticate + ยังไม่ระงับ + สมาชิกยังไม่หมดอายุ) - สร้าง/ดู/แก้/ลบ/แชร์การ์ดใช้ไม่ได้ถ้าหมดอายุ
 // create-card: ไม่จำกัด timeout เพื่อรองรับอัปโหลดและแปลงรูปช้า (production / HEIC)
+function logCreateCardRequest(req, res, next) {
+    console.log('[create-card] POST /api/create-card reached (before auth/upload)');
+    next();
+}
 router.post('/create-card',
+    logCreateCardRequest,
     rateLimitCreateCard,
     authenticateToken,
     requireActiveUser,
