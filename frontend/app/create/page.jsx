@@ -89,6 +89,11 @@ function CreateContent() {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0] || null;
+    if (file && file.size === 0) {
+      showAlertMsg('ไฟล์รูปว่างหรือไม่รองรับ (ลองเลือกจากอัลบั้มหรือบันทึกรูปก่อนอัปโหลด)', 'error');
+      e.target.value = '';
+      return;
+    }
     setImage1(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -358,7 +363,7 @@ function CreateContent() {
                   <input
                     id="create-image1"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
                     onChange={handleImageChange}
                     className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white"
                   />

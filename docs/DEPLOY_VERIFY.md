@@ -4,6 +4,58 @@
 
 ---
 
+## 0. ไฟล์ที่ใช้ Install และ Build (ตรวจว่าครบ)
+
+| ไฟล์ | ใช้ทำอะไร |
+|------|------------|
+| `package.json` (ราก) | ติดตั้ง backend + workspaces; scripts: `start`, `dev`, `install:all`, `build`, `build:clean` |
+| `frontend/package.json` | Dependencies ของ Next.js; script `build` ใช้ตอน `npm run build -w frontend` |
+| `scripts/clean-build.js` | ลบ `.next`, cache แล้วรัน build ใหม่ (ใช้กับ `npm run build:clean`) |
+| `.env` / `.env.example` | ตัวแปรแวดล้อม (PORT, BASE_URL, DB_*, JWT_SECRET, LIFF_ID, MAX_FILE_SIZE ฯลฯ) |
+| `frontend/next.config.js` | การตั้งค่า Next (path to .env, redirects, webpack) |
+
+**ติดตั้ง:** จากโฟลเดอร์รากรัน `npm run install:all` หรือ `npm install` (ไม่ต้องไปติดตั้งใน frontend แยก)  
+**Build:** `npm run build` หรือ `npm run build:clean`  
+**รัน Production:** บนเซิร์ฟที่ใช้ PM2 **ไม่ต้องรัน `npm start` หลัง build** — ใช้ **`pm2 restart linebizcard`** เท่านั้น (ถ้ารัน `npm start` ซ้ำจะได้ error `EADDRINUSE: address already in use 0.0.0.0:3000` เพราะแอปถูก PM2 รันอยู่แล้ว)
+
+---
+
+## 0.2 หลัง build ใช้ pm2 restart — ห้ามรัน npm start ซ้ำ
+
+แอปบน Production ควรรันผ่าน **PM2** (process manager) เท่านั้น ไม่ใช่รัน `npm start` เองในเทอร์มินัล
+
+- **ลำดับที่ถูก:** `git pull` → `npm run install:all` → `npm run build:clean` → **`pm2 restart linebizcard`** → `pm2 save`
+- **ห้าม:** หลัง build แล้วไปรัน `npm start` อีกครั้ง — จะ error **`EADDRINUSE: address already in use 0.0.0.0:3000`** เพราะพอร์ต 3000 ถูก process เดิม (ที่ PM2 รันอยู่) ใช้อยู่แล้ว
+
+ถ้าเห็น error `EADDRINUSE` แปลว่ามี process ใช้พอร์ต 3000 อยู่แล้ว (มักเป็นแอปตัวเดียวกันที่ PM2 รัน) — ไม่ต้องรัน `npm start` อีก แค่ใช้ `pm2 restart linebizcard` เพื่อโหลดโค้ดใหม่หลัง build
+
+---
+
+## 0.1 เทียบ .env ระหว่าง Local (Dev) กับ Production — อะไรทำให้ฟังก์ชันทำงานไม่เหมือนกัน
+
+ความต่างด้านล่างส่งผลโดยตรงต่อพฤติกรรมของแอป (ไม่รวมค่าลับ เช่น รหัสผ่าน/secret ที่ต้องคนละชุดอยู่แล้ว)
+
+| ตัวแปร | Local (Dev) โดยทั่วไป | Production (เซิร์ฟ deploy แล้ว) | ผลต่อการทำงาน |
+|--------|------------------------|----------------------------------|----------------|
+| **NODE_ENV** | `development` | `production` | Dev: Next รันโหมด dev (hot reload, error แสดงละเอียด). Prod: ใช้ผลจาก `npm run build` + cache, พฤติกรรมและ performance ต่างกัน |
+| **BASE_URL** | มักเป็น URL Tunnel หรือ localhost | โดเมนจริง เช่น `https://linebizcard.tectony.co.th` | ใช้ใน LINE callback, ลิงก์ในอีเมล, ลิงก์แชร์การ์ด — **ต้องตรงกับที่ตั้งใน LINE Developers (Callback URL, LIFF Endpoint)** ถ้าไม่ตรง Login/Share จะใช้ไม่ได้ |
+| **HOST** | มักไม่ตั้ง (ใช้ default ในโค้ด) | `0.0.0.0` | ให้แอปฟังทุก interface (ใช้เมื่อมี Nginx reverse proxy) — ถ้า Prod ไม่ตั้งและโค้ด default เป็น 0.0.0.0 ก็ไม่ต่าง |
+| **LINE_CHANNEL_ID / LIFF_ID / LIFF_LOGIN_ID** | ชุด Channel/LIFF ของ Dev หรือ Tunnel | ชุด Channel/LIFF ของโดเมนจริง | **คนละ Channel = คนละแอปใน LINE** — token/cookie จาก Channel หนึ่งใช้กับอีก Channel ไม่ได้. ต้องให้ Production ใช้ค่าที่ผูกกับโดเมนจริงเท่านั้น |
+| **PAYMENT_GATEWAY_ENABLED** | `true` หรือ `false` | มัก `true` | ถ้า Prod เป็น `false` ฟีเจอร์บัตรเครดิต/เดบิตจะปิด (ไม่ตัดเงิน) |
+| **PAYMENT_GATEWAY_PUBLIC_KEY / SECRET_KEY** | มักเป็น **test** key (`pk_test_...`, `sk_test_...`) | ควรเป็น **live** key (`pk_live_...`, `sk_live_...`) | Test key = ชำระแบบทดสอบ (บัตรทดสอบของ Stripe). Live key = ตัดเงินจริง — **ถ้า Prod ใช้ test key จะไม่ตัดเงินจริง**; ฟลูว์ 3DS / การยืนยันอาจต่างกัน |
+| **FRONTEND_URL / APP_URL** | มักไม่ตั้ง | แนะนำตั้งเป็นโดเมนจริง | ใช้ใน redirect หลังชำระ (เช่น pay-by-qr). ถ้าว่าง redirect อาจเป็น path ล้วน ไม่มีโดเมน — บางครั้งทำให้เปิดลิงก์ผิด |
+
+**สรุปจุดที่มักทำให้ “ทำบน Dev ได้ แต่บน Prod ไม่เหมือนกัน”:**
+
+1. **BASE_URL / LINE Channel / LIFF** ไม่ตรงกัน — หน้า Login หรือแชร์การ์ดเปิดใน Prod แล้วไปเรียก callback/LIFF ที่ยังชี้ไปที่ URL เดิม (เช่น Tunnel) จะล้มหรือ redirect ผิด  
+2. **NODE_ENV** — โหมด dev กับ production ของ Next และการ serve ต่างกัน (รวมถึงการอัปโหลด/แปลงรูปที่อาจช้ากว่าใน Prod ถ้าไม่มี timeout เพิ่ม)  
+3. **Stripe ใช้ test key บน Prod** — กดชำระแล้วไม่ตัดเงินจริง และอาจได้ flow คนละแบบ  
+4. **ไม่มี FRONTEND_URL บน Prod** — redirect หลังสร้างรายการชำระ (เช่น QR) อาจไม่ครบ URL  
+
+แนะนำให้ Production ตั้ง `FRONTEND_URL` (หรือ `APP_URL`) = ค่าเดียวกับ `BASE_URL` ของโดเมนจริง และตรวจใน LINE Developers ว่า Callback URL / LIFF Endpoint ชี้ไปที่โดเมนจริง ไม่ใช่ URL ของ Dev/Tunnel.
+
+---
+
 ## 1. ตรวจสอบ Nginx (ขนาดอัปโหลด + timeout)
 
 ### 1.1 ดู config Nginx ที่ใช้อยู่
@@ -170,7 +222,7 @@ pm2 logs linebizcard --lines 30
 
 ## 5. ลำดับ Deploy แนะนำ (ทำทุกครั้งหลัง pull)
 
-รันตามลำดับ:
+รันตามลำดับ — **หลัง build ใช้ `pm2 restart` เท่านั้น ไม่รัน `npm start`** (ดูมาตรา 0.2):
 
 ```bash
 cd /home/ubuntu/linebizcard
@@ -209,3 +261,21 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/health
 ```
 
 ได้ `200` แปลว่า API ตอบปกติ (แก้พอร์ตถ้าไม่ใช่ 3000)
+
+---
+
+## 8. แก้แพ็กเกจฟรีขึ้น "กรุณาลงทะเบียนช่องทางชำระเงินก่อน" (Production)
+
+ถ้าลูกค้ากดแพ็กเกจฟรีแล้วขึ้นข้อความให้ใส่ช่องทางชำระเงิน แสดงว่าใน DB แพ็กเกจนั้นมี `requires_payment = true` หรือไม่ได้ตั้ง รัน SQL นี้ครั้งเดียว:
+
+```bash
+psql -U <user> -d <dbname> -f database/fix-free-package-requires-payment.sql
+```
+
+หรือรันใน psql:
+
+```sql
+UPDATE packages SET requires_payment = false WHERE (price IS NULL OR price = 0) AND (COALESCE(requires_payment, true) = true);
+```
+
+หลัง deploy โค้ดล่าสุด ระบบจะถือว่าแพ็กเกจที่ `price = 0` เป็นฟรีแม้ DB ยังตั้งผิด (ทั้งฝั่ง frontend และ backend)

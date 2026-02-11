@@ -114,7 +114,7 @@ npm run build
 
 หรือ build แบบล้าง cache ก่อน: `npm run build:clean`
 
-หลัง build สำเร็จ รัน `npm start` ได้เลย
+หลัง build สำเร็จ: ถ้ารันแอปด้วย **PM2** บนเซิร์ฟ ใช้ **`pm2 restart linebizcard`** ไม่ต้องรัน `npm start` (รันซ้ำจะ error EADDRINUSE port 3000 — ดู `docs/DEPLOY_VERIFY.md` มาตรา 0.2). ถ้าไม่ได้ใช้ PM2 รัน `npm start` ได้
 
 **หมายเหตุ:** ไม่ต้องรัน `cd frontend && npm install` แยก — ใช้ `npm install` ที่รากเพียงครั้งเดียว
 

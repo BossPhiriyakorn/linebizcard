@@ -39,8 +39,9 @@ export default function ChoosePackagePage() {
   }, [router]);
 
   const goToSummary = (pkg) => {
-    // ตรวจสอบว่าแพ็กเกจต้องชำระเงินหรือไม่
-    if (pkg.requires_payment === true || (pkg.price != null && Number(pkg.price) > 0)) {
+    // แพ็กเกจถือว่า "ฟรี" เมื่อ requires_payment === false หรือ price เป็น 0 (ป้องกัน DB ตั้ง requires_payment ผิด)
+    const isFreePackage = pkg.requires_payment === false || (pkg.price != null && Number(pkg.price) === 0);
+    if (!isFreePackage) {
       // ตรวจสอบว่ามีช่องทางการชำระเงินหรือไม่
       if (loadingChannels) {
         setAlert({ show: true, msg: 'กำลังตรวจสอบช่องทางการชำระเงิน...', type: 'error' });
@@ -59,7 +60,6 @@ export default function ChoosePackagePage() {
         return;
       }
     }
-    // ถ้ามีช่องทางการชำระเงินแล้ว หรือแพ็กเกจฟรี ให้ไปหน้าสรุปการชำระ
     router.push('/payment-summary?package_id=' + pkg.id);
   };
 
@@ -125,11 +125,11 @@ export default function ChoosePackagePage() {
                   <p className="mt-2 text-base font-semibold text-[#1DB446]">
                     {pkg.price != null && Number(pkg.price) > 0 ? `${Number(pkg.price)} บาท` : 'ฟรี'}
                   </p>
-                  {pkg.requires_payment === false && (
+                  {(pkg.requires_payment === false || (pkg.price != null && Number(pkg.price) === 0)) && (
                     <p className="mt-1 text-xs text-slate-500">ไม่ต้องชำระเงิน — กดใช้ได้เลย</p>
                   )}
                 </div>
-                {pkg.requires_payment === false ? (
+                {pkg.requires_payment === false || (pkg.price != null && Number(pkg.price) === 0) ? (
                   <button
                     type="button"
                     disabled={submittingId === pkg.id}

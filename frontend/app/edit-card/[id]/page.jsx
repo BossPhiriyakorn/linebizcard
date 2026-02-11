@@ -53,6 +53,11 @@ export default function EditCardPage() {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0] || null;
+    if (file && file.size === 0) {
+      setAlert({ show: true, msg: 'ไฟล์รูปว่างหรือไม่รองรับ ลองเลือกจากอัลบั้มหรือบันทึกรูปก่อน', type: 'error' });
+      e.target.value = '';
+      return;
+    }
     setImage1(file);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);

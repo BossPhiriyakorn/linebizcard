@@ -16,6 +16,7 @@ function PayByQrContent() {
   const [uploading, setUploading] = useState(false);
   const [slipFile, setSlipFile] = useState(null);
   const [uploaded, setUploaded] = useState(false);
+  const [slipError, setSlipError] = useState('');
 
   useEffect(() => {
     if (!getToken()) {
@@ -122,10 +123,21 @@ function PayByQrContent() {
         ) : (
           <form onSubmit={handleUploadSlip} className="rounded-xl border-2 border-gray-200 bg-white p-5">
             <h2 className="mb-3 font-semibold text-gray-800">แนบสลิปการโอน</h2>
+            {slipError && <p className="mb-2 text-sm text-red-600">{slipError}</p>}
             <input
               type="file"
-              accept="image/*"
-              onChange={(e) => setSlipFile(e.target.files?.[0] || null)}
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setSlipError('');
+                if (file && file.size === 0) {
+                  setSlipError('ไฟล์รูปว่างหรือไม่รองรับ ลองเลือกจากอัลบั้มหรือบันทึกรูปก่อน');
+                  setSlipFile(null);
+                  e.target.value = '';
+                  return;
+                }
+                setSlipFile(file);
+              }}
               className="mb-4 w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:text-white file:hover:bg-[#0FA03A]"
             />
             <div className="flex gap-2">

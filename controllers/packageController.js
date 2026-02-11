@@ -71,8 +71,9 @@ async function choosePackage(req, res) {
             return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจที่เลือก' });
         }
         const pkg = pkgResult.rows[0];
-
-        const requiresPayment = pkg.requires_payment === true;
+        const priceNum = parseFloat(pkg.price) != null && !isNaN(parseFloat(pkg.price)) ? parseFloat(pkg.price) : 0;
+        // แพ็กเกจฟรี = ตั้ง requires_payment เป็น false หรือ price เป็น 0 (ป้องกัน DB ตั้งผิดใน Production)
+        const requiresPayment = pkg.requires_payment === true && priceNum > 0;
         const maxUsesPerUser = pkg.max_uses_per_user != null ? parseInt(pkg.max_uses_per_user, 10) : null;
 
         if (maxUsesPerUser != null && !isNaN(maxUsesPerUser)) {
