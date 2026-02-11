@@ -5,10 +5,6 @@ const { getCustomerUploadDir } = require('../middleware/upload');
 
 const uploadDir = process.env.UPLOAD_DIR || 'uploads/images';
 
-// ขนาดสูงสุดของรูป (กว้าง x สูง) — รีไซส์ให้อยู่ภายในถ้าเกิน (เช่น จำกัดของ LINE Flex)
-const MAX_IMAGE_WIDTH = parseInt(process.env.MAX_IMAGE_WIDTH, 10) || 2047;
-const MAX_IMAGE_HEIGHT = parseInt(process.env.MAX_IMAGE_HEIGHT, 10) || 2048;
-
 /** ตรวจจาก magic bytes ว่าไฟล์เป็น HEIC/HEIF หรือไม่ (รองรับรูปจาก iPhone ที่ส่งเป็น .jpg แต่เนื้อหาเป็น HEIC) */
 async function isHeicByMagicBytes(absolutePath) {
     try {
@@ -24,17 +20,10 @@ async function isHeicByMagicBytes(absolutePath) {
 }
 
 /**
- * แปลง input (path หรือ buffer) เป็น WebP และเขียนไฟล์ — ถ้าขนาดเกิน MAX_IMAGE_WIDTH/MAX_IMAGE_HEIGHT จะรีไซส์ให้อยู่ภายใน (รักษาอัตราส่วน)
+ * แปลง input (path หรือ buffer) เป็น WebP และเขียนไฟล์ (ไม่รีไซส์)
  */
 async function toWebpWithResize(input, outputPath) {
-    let pipeline = sharp(input);
-    const meta = await pipeline.metadata();
-    const w = meta.width || 0;
-    const h = meta.height || 0;
-    if (w > MAX_IMAGE_WIDTH || h > MAX_IMAGE_HEIGHT) {
-        pipeline = pipeline.resize(MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT, { fit: 'inside' });
-    }
-    await pipeline.webp({ quality: 85 }).toFile(outputPath);
+    await sharp(input).webp({ quality: 85 }).toFile(outputPath);
 }
 
 /**
@@ -62,7 +51,7 @@ const SUPPORTED_CONVERT_EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'
 const UNSUPPORTED_CONVERT_EXT = ['.bmp', '.ico'];
 
 /**
- * แปลงไฟล์รูปที่อัปโหลดเป็น WebP (ถ้าขนาดเกินกว้าง 2047 หรือสูง 2048 จะรีไซส์ให้อยู่ภายใน) แล้วลบไฟล์เดิม
+ * แปลงไฟล์รูปที่อัปโหลดเป็น WebP (ไม่รีไซส์) แล้วลบไฟล์เดิม
  * รองรับ: JPEG, PNG, GIF, WebP, AVIF, TIFF, HEIC/HEIF (iPhone). BMP/ICO รับอัปโหลดได้แต่ไม่รองรับการแปลงเป็น WebP
  * @param {string} inputPath - path เต็มไปยังไฟล์รูป (หรือ path สัมพันธ์จาก project root)
  * @returns {Promise<string>} ชื่อไฟล์ผลลัพธ์ (เช่น img-123.webp) สำหรับใช้ใน URL
