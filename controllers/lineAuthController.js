@@ -296,17 +296,34 @@ async function completeProfile(req, res) {
         }
 
         const currentEmail = current.rows[0]?.email;
-        const emailChanged = currentEmail != null && currentEmail.trim().toLowerCase() !== String(email).trim().toLowerCase();
+        const emailTrimmed = String(email).trim();
+        const emailChanged = currentEmail != null && currentEmail.trim().toLowerCase() !== emailTrimmed.toLowerCase();
         const newEmailVerified = emailChanged ? false : (current.rows[0]?.email_verified ?? false);
         const newEmailVerifiedAt = emailChanged ? null : (current.rows[0]?.email_verified_at ?? null);
+
+        // ถ้าเปลี่ยนอีเมล — ตรวจว่าอีเมลใหม่ไม่ซ้ำกับ user อื่น (ป้องกัน unique constraint users_email_key)
+        if (emailTrimmed) {
+            const existing = await pool.query(
+                'SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER($1) AND id != $2',
+                [emailTrimmed, userId]
+            );
+            if (existing.rows.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว กรุณาใช้อีเมลอื่น'
+                });
+            }
+        }
 
         const ef = encrypt(first_name);
         const el = encrypt(last_name);
         const en = nickname != null && nickname !== '' ? encrypt(nickname) : null;
         const ep = encrypt(phone);
         const now = new Date();
-        // ลงทะเบียนครั้งแรก = บันทึกเวลายอมรับ; แก้ไขโปรไฟล์ = ไม่เปลี่ยน accepted_*_at
-        const result = await pool.query(
+        let result;
+        try {
+            // ลงทะเบียนครั้งแรก = บันทึกเวลายอมรับ; แก้ไขโปรไฟล์ = ไม่เปลี่ยน accepted_*_at
+            result = await pool.query(
             isFirstCompletion
                 ? `UPDATE users 
                     SET first_name = $1, last_name = $2, nickname = $3, phone = $4, email = $5, is_profile_complete = $6, email_verified = $8, email_verified_at = $9, accepted_privacy_policy_at = $10, accepted_terms_at = $11
@@ -317,7 +334,16 @@ async function completeProfile(req, res) {
                     WHERE id = $7
                     RETURNING id, username, email, first_name, last_name, nickname, phone, line_user_id, login_type, is_profile_complete`,
             isFirstCompletion ? [ef, el, en, ep, email, true, userId, newEmailVerified, newEmailVerifiedAt, now, now] : [ef, el, en, ep, email, true, userId, newEmailVerified, newEmailVerifiedAt]
-        );
+            );
+        } catch (dbErr) {
+            if (dbErr.code === '23505' && dbErr.constraint === 'users_email_key') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว กรุณาใช้อีเมลอื่น'
+                });
+            }
+            throw dbErr;
+        }
 
         if (result.rows.length === 0) {
             return res.status(404).json({
