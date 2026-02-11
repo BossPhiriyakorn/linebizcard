@@ -169,7 +169,7 @@ function RegisterLineContent() {
                     {form.accepted_privacy_policy ? <span className="text-[#1DB446]">✓</span> : null}
                   </span>
                   <span className="block text-sm text-gray-700">
-                    ข้าพเจาอ่านและยอมรับ <strong>นโยบายความเป็นส่วนตัว</strong> แล้ว
+                    ข้าพเจ้าอ่านและยอมรับ <strong>นโยบายความเป็นส่วนตัว</strong> แล้ว
                     <span className="mt-1 block text-[#1DB446]">ดูเนื้อหา</span>
                   </span>
                 </div>
@@ -184,7 +184,7 @@ function RegisterLineContent() {
                     {form.accepted_terms ? <span className="text-[#1DB446]">✓</span> : null}
                   </span>
                   <span className="block text-sm text-gray-700">
-                    ข้าพเจาอ่านและยอมรับ <strong>ข้อกำหนดการใช้บริการ</strong> แล้ว
+                    ข้าพเจ้าอ่านและยอมรับ <strong>ข้อกำหนดการใช้บริการ</strong> แล้ว
                     <span className="mt-1 block text-[#1DB446]">ดูเนื้อหา</span>
                   </span>
                 </div>

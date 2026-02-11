@@ -44,6 +44,13 @@ function replaceTemplatePlaceholders(template, data) {
             throw new Error('ไม่สามารถแปลง template เป็น JSON string ได้');
         }
 
+        // รายละเอียดว่างให้ใส่ non-breaking space หนึ่งตัว — Flex ไม่ว่าง LINE รับได้ แชร์ได้ แต่การ์ดไม่แสดงตัวอักษร
+        const descRaw = (data && data.description != null) ? String(data.description) : '';
+        const desc2Raw = (data && data.description2 != null) ? String(data.description2) : (data && data.description != null) ? String(data.description) : '';
+        const EMPTY_PLACEHOLDER = '\u00A0';
+        const descVal = descRaw.trim() !== '' ? descRaw.trim() : EMPTY_PLACEHOLDER;
+        const desc2Val = desc2Raw.trim() !== '' ? desc2Raw.trim() : EMPTY_PLACEHOLDER;
+
         // Replace placeholders (ต้อง replace description2 และ user_image2 ก่อน เพื่อไม่ให้ถูก replace ด้วย description และ user_image)
         // และ replace imageUrl ในรูปแบบต่างๆ ที่อาจมีใน template
         jsonString = jsonString.replace(/{name}/g, escapeJsonString((data && data.name) || ''));
@@ -58,8 +65,8 @@ function replaceTemplatePlaceholders(template, data) {
         jsonString = jsonString.replace(/{image_url}/g, escapeJsonString(imageUrl1));
         jsonString = jsonString.replace(/{image_url1}/g, escapeJsonString(imageUrl1));
         jsonString = jsonString.replace(/{image_url2}/g, escapeJsonString(imageUrl2));
-        jsonString = jsonString.replace(/{description2}/g, escapeJsonString((data && data.description2) || (data && data.description) || ''));
-        jsonString = jsonString.replace(/{description}/g, escapeJsonString((data && data.description) || ''));
+        jsonString = jsonString.replace(/{description2}/g, escapeJsonString(desc2Val));
+        jsonString = jsonString.replace(/{description}/g, escapeJsonString(descVal));
         jsonString = jsonString.replace(/{liff_url}/g, escapeJsonString((data && data.liff_url) || ''));
         
         // Parse back to object

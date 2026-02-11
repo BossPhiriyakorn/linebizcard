@@ -161,8 +161,8 @@ export default function EditCardPage() {
                       <input id="edit-image1" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif" onChange={handleImageChange} className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white" />
                       <small className="mt-1 block text-sm italic text-gray-500">เว้นว่างไว้ถ้าไม่เปลี่ยนรูป รองรับ JPG, PNG, GIF, WebP, HEIC (iPhone)</small>
                       {imagePreviewUrl && (
-                        <div className="mt-3 text-center">
-                          <img src={imagePreviewUrl} alt="Preview" className="mx-auto max-h-[200px] max-w-full rounded-lg object-cover shadow" />
+                        <div className="mt-3 w-full overflow-hidden rounded-lg bg-gray-100">
+                          <img src={imagePreviewUrl} alt="Preview" className="w-full max-w-full rounded-lg object-contain shadow" style={{ maxWidth: 2047, maxHeight: 2048 }} />
                         </div>
                       )}
                     </div>
@@ -181,9 +181,9 @@ export default function EditCardPage() {
                 <h3 className="mb-4 text-gray-800 font-semibold">📱 ตัวอย่างการ์ด</h3>
                 <div className="flex justify-center">
                   <div className="w-full max-w-[min(100%,420px)] overflow-hidden rounded-xl bg-white shadow-lg">
-                    <div className="relative h-[240px] min-h-[240px] w-full bg-gradient-to-br from-[#667eea] to-[#764ba2] md:h-[280px] md:min-h-[280px]">
+                    <div className="relative flex min-h-[160px] items-center justify-center overflow-hidden bg-gradient-to-br from-[#667eea] to-[#764ba2]">
                       {previewImageUrl ? (
-                        <img src={previewImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                        <img src={previewImageUrl} alt="" className="w-full max-w-full object-contain" style={{ maxWidth: 2047, maxHeight: 2048 }} />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
                           <span className="text-4xl">📷</span>

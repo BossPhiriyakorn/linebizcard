@@ -133,12 +133,9 @@ export default function Share() {
           return;
         }
 
-        // shareTargetPicker ใช้ได้เฉพาะเมื่อเปิดจากภายในแอป LINE (ลิงก์ LIFF) — ถ้าเปิดจากเบราว์เซอร์ภายนอกจะ throw
+        // shareTargetPicker ใช้ได้เฉพาะเมื่อเปิดจากภายในแอป LINE — ถ้าเปิดจากเบราว์เซอร์/คอมภายนอก ให้ส่งไปหน้าแรกแทน (ไม่แสดงข้อความยาว)
         if (!window.liff.isInClient()) {
-          const liffShareUrl = `https://liff.line.me/${LIFF_ID}?name=${encodeURIComponent(cardName)}&id=${cardId}`;
-          showError(
-            'การแชร์การ์ดต้องเปิดจากภายในแอป LINE เท่านั้น กรุณาใช้ลิงก์จากปุ่ม "แชร์ใน LINE" หรือ "คัดลอกลิงค์" แล้ววางลิงก์ในแชท LINE แล้วกดเปิด หรือเปิดลิงก์นี้ในแอป LINE: ' + liffShareUrl
-          );
+          window.location.replace(window.location.origin + '/home');
           return;
         }
 

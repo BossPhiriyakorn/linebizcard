@@ -108,8 +108,20 @@ function CreateContent() {
       showAlertMsg('กรุณากรอกชื่อ', 'error');
       return;
     }
-    if (form.phone.length > 10) {
-      showAlertMsg('เบอร์โทรศัพท์ไม่เกิน 10 หลัก', 'error');
+    if (!form.phone?.trim()) {
+      showAlertMsg('กรุณากรอกเบอร์โทรศัพท์', 'error');
+      return;
+    }
+    if (form.phone.length !== 10) {
+      showAlertMsg('เบอร์โทรศัพท์ต้อง 10 หลัก', 'error');
+      return;
+    }
+    if (!form.email?.trim()) {
+      showAlertMsg('กรุณากรอกอีเมล', 'error');
+      return;
+    }
+    if (!image1) {
+      showAlertMsg('กรุณาอัปโหลดรูปภาพ', 'error');
       return;
     }
     setLoading(true);
@@ -298,24 +310,26 @@ function CreateContent() {
                   />
                 </div>
                 <div className="mb-5">
-                  <label htmlFor="create-phone" className={labelClass}>Tel.</label>
+                  <label htmlFor="create-phone" className={labelClass}>Tel. *</label>
                   <input
                     id="create-phone"
                     type="tel"
-                    placeholder="เบอร์โทรศัพท์"
+                    required
+                    placeholder="เบอร์โทรศัพท์ 10 หลัก"
                     maxLength={10}
                     inputMode="numeric"
                     value={form.phone}
                     onChange={handlePhoneChange}
                     className={inputClass}
                   />
-                  <small className="mt-1 block text-sm italic text-gray-500">ไม่เกิน 10 หลัก</small>
+                  <small className="mt-1 block text-sm italic text-gray-500">ต้องกรอก 10 หลัก</small>
                 </div>
                 <div className="mb-5">
-                  <label htmlFor="create-email" className={labelClass}>Email</label>
+                  <label htmlFor="create-email" className={labelClass}>Email *</label>
                   <input
                     id="create-email"
                     type="email"
+                    required
                     placeholder="อีเมล"
                     value={form.email}
                     onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
@@ -340,7 +354,7 @@ function CreateContent() {
                   <span className={numberBadge}>📷</span> รูปภาพ
                 </h3>
                 <div className="mb-5">
-                  <label htmlFor="create-image1" className={labelClass}>อัพโหลดรูปภาพ</label>
+                  <label htmlFor="create-image1" className={labelClass}>อัพโหลดรูปภาพ *</label>
                   <input
                     id="create-image1"
                     type="file"
@@ -368,7 +382,7 @@ function CreateContent() {
                 <button
                   type="submit"
                   className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] hover:-translate-y-0.5 hover:shadow-lg disabled:bg-gray-400 disabled:translate-y-0 disabled:shadow-none"
-                  disabled={loading}
+                  disabled={loading || !form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
                 >
                   {loading ? 'กำลังสร้าง...' : 'สร้างการ์ด'}
                 </button>

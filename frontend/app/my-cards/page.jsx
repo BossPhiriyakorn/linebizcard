@@ -190,7 +190,9 @@ function MyCardsContent() {
                 </span>
               </div>
               {card.user_image && (
-                <img src={card.user_image} alt="Card" className="mb-4 h-[200px] w-full rounded-lg object-cover" />
+                <div className="mb-4 w-full overflow-hidden rounded-lg bg-gray-100">
+                  <img src={card.user_image} alt="Card" className="w-full rounded-lg object-contain" style={{ maxWidth: 2047, maxHeight: 2048 }} />
+                </div>
               )}
               <div className="mb-4 space-y-1 text-sm text-gray-500">
                 {card.user_phone && <p>📞 {card.user_phone}</p>}

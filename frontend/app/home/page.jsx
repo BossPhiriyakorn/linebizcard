@@ -201,11 +201,9 @@ function HomeContent() {
                     </span>
                   </div>
                   {latestCard.user_image && (
-                    <img
-                      src={latestCard.user_image}
-                      alt="การ์ด"
-                      className="mb-3 h-36 w-full rounded-lg object-cover"
-                    />
+                    <div className="mb-3 w-full overflow-hidden rounded-lg bg-gray-100">
+                      <img src={latestCard.user_image} alt="การ์ด" className="w-full rounded-lg object-contain" style={{ maxWidth: 2047, maxHeight: 2048 }} />
+                    </div>
                   )}
                   <div className="mb-3 space-y-1 text-xs text-gray-500">
                     {latestCard.user_phone && <p>📞 {latestCard.user_phone}</p>}
