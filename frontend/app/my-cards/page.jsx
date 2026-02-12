@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import CustomerAppBar from '../components/CustomerAppBar';
 import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
@@ -20,6 +20,14 @@ async function fetcherMyCards(url) {
   }
   if (!data?.success) throw new Error(data?.message || 'โหลดข้อมูลไม่สำเร็จ');
   return Array.isArray(data.data) ? data.data : [];
+}
+
+// ตรวจสอบว่า membership หมดอายุหรือไม่จาก profile
+function checkMembershipExpiredFromProfile(profile) {
+  if (!profile?.membership) return true; // ไม่มี membership = หมดอายุ
+  const remaining = profile.membership.remaining_days;
+  if (remaining === null || remaining === undefined) return true;
+  return remaining <= 0;
 }
 
 function SkeletonCards() {
@@ -44,31 +52,66 @@ function SkeletonCards() {
 
 function MyCardsContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'success' });
+  const [checkingMembership, setCheckingMembership] = useState(true);
+  const [membershipOk, setMembershipOk] = useState(false);
 
   const token = typeof window !== 'undefined' ? getToken() : null;
-  const { data: cards = [], isLoading, error, mutate } = useSWR(
-    token ? MY_CARDS_KEY : null,
-    fetcherMyCards,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 2000,
-      onError: (err) => {
-        if (err?.message !== 'Unauthorized') {
-          setAlert({ show: true, msg: err?.message || 'โหลดข้อมูลไม่สำเร็จ', type: 'error' });
-        }
-      },
-    }
-  );
 
+  // ตรวจสอบ membership ก่อนโหลดการ์ด
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!token) {
       window.location.href = '/liff/login';
       return;
     }
-  }, [token]);
+    // ตรวจสอบ profile เพื่อดู membership
+    fetch('/api/user/profile', { headers: getHeaders() })
+      .then((r) => {
+        if (handleAuthResponse(r)) return null;
+        return r.json();
+      })
+      .then((data) => {
+        if (data === null) return;
+        if (data?.success && data.data) {
+          const expired = checkMembershipExpiredFromProfile(data.data);
+          if (expired) {
+            // หมดอายุ — redirect กลับ home
+            router.replace('/home?membership_expired=1');
+          } else {
+            setMembershipOk(true);
+          }
+        } else {
+          // ไม่สามารถดึง profile ได้
+          router.replace('/home');
+        }
+        setCheckingMembership(false);
+      })
+      .catch(() => {
+        setCheckingMembership(false);
+        router.replace('/home');
+      });
+  }, [token, router]);
+
+  // SWR จะเริ่มทำงานเมื่อ membershipOk เป็น true เท่านั้น
+  const { data: cards = [], isLoading, error, mutate } = useSWR(
+    membershipOk && token ? MY_CARDS_KEY : null,
+    fetcherMyCards,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 2000,
+      onError: (err) => {
+        if (err?.code === 'MEMBERSHIP_EXPIRED') {
+          // ถ้า API ตอบว่าหมดอายุ ให้ redirect กลับ home
+          router.replace('/home?membership_expired=1');
+        } else if (err?.message !== 'Unauthorized') {
+          setAlert({ show: true, msg: err?.message || 'โหลดข้อมูลไม่สำเร็จ', type: 'error' });
+        }
+      },
+    }
+  );
 
   useEffect(() => {
     const urlToken = searchParams.get('token');
@@ -130,6 +173,21 @@ function MyCardsContent() {
       })
       .catch(() => setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' }));
   };
+
+  // แสดง loading ขณะตรวจสอบ membership
+  if (checkingMembership) {
+    return (
+      <div className="mx-auto w-full max-w-[1200px]">
+        <CustomerAppBar />
+        <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+            <p className="mt-3 text-gray-500">กำลังตรวจสอบสิทธิ์...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1200px]">

@@ -12,6 +12,14 @@ const sectionTitleClass =
   'mb-3 flex items-center gap-2.5 border-b-2 border-[#1DB446] pb-2.5 text-lg font-bold text-[#1DB446]';
 const numberBadge = 'inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#1DB446] text-sm font-bold text-white';
 
+// ตรวจสอบว่า membership หมดอายุหรือไม่จาก profile
+function checkMembershipExpiredFromProfile(profile) {
+  if (!profile?.membership) return true; // ไม่มี membership = หมดอายุ
+  const remaining = profile.membership.remaining_days;
+  if (remaining === null || remaining === undefined) return true;
+  return remaining <= 0;
+}
+
 function CreateContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,6 +34,7 @@ function CreateContent() {
   const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
   const [createdSuccess, setCreatedSuccess] = useState(false);
   const [compressThresholdMB, setCompressThresholdMB] = useState(2); // ค่า default จนกว่าจะดึงจาก API
+  const [checkingMembership, setCheckingMembership] = useState(true);
 
   useEffect(() => {
     const urlToken = searchParams.get('token');
@@ -38,27 +47,51 @@ function CreateContent() {
       return;
     }
     
-    // ดึงค่าการตั้งค่าจาก API
-    fetch('/api/config')
-      .then((r) => r.json())
+    // ตรวจสอบ membership ก่อนอนุญาตให้สร้างการ์ด
+    fetch('/api/user/profile', { headers: getHeaders() })
+      .then((r) => {
+        if (handleAuthResponse(r)) return null;
+        return r.json();
+      })
       .then((data) => {
-        if (data.success && data.data && data.data.compressThresholdMB) {
-          setCompressThresholdMB(data.data.compressThresholdMB);
+        if (data === null) return;
+        if (data?.success && data.data) {
+          const expired = checkMembershipExpiredFromProfile(data.data);
+          if (expired) {
+            // หมดอายุ — redirect กลับ home
+            router.replace('/home?membership_expired=1');
+            return;
+          }
+        } else {
+          // ไม่สามารถดึง profile ได้
+          router.replace('/home');
+          return;
         }
+        setCheckingMembership(false);
+        
+        // โหลด config และ templates หลังจากตรวจสอบ membership ผ่านแล้ว
+        fetch('/api/config')
+          .then((r) => r.json())
+          .then((configData) => {
+            if (configData.success && configData.data && configData.data.compressThresholdMB) {
+              setCompressThresholdMB(configData.data.compressThresholdMB);
+            }
+          })
+          .catch(() => {});
+        
+        fetch('/api/templates', { headers: getHeaders() })
+          .then((r) => (handleAuthResponse(r) ? null : r.json()))
+          .then((templatesData) => {
+            if (templatesData == null) return;
+            if (templatesData.success && Array.isArray(templatesData.data)) {
+              setTemplates((templatesData.data || []).filter((t) => t.is_active !== false));
+            }
+          })
+          .catch(() => setAlert({ show: true, msg: 'โหลดแทมเพลตไม่สำเร็จ', type: 'error' }));
       })
       .catch(() => {
-        // Silent fail - ใช้ค่า default
+        router.replace('/home');
       });
-    
-    fetch('/api/templates', { headers: getHeaders() })
-      .then((r) => (handleAuthResponse(r) ? null : r.json()))
-      .then((data) => {
-        if (data == null) return;
-        if (data.success && Array.isArray(data.data)) {
-          setTemplates((data.data || []).filter((t) => t.is_active !== false));
-        }
-      })
-      .catch(() => setAlert({ show: true, msg: 'โหลดแทมเพลตไม่สำเร็จ', type: 'error' }));
   }, [router, searchParams]);
 
   useEffect(() => {
@@ -382,6 +415,21 @@ function CreateContent() {
       setLoadingMsg('');
     }
   };
+
+  // แสดง loading ขณะตรวจสอบ membership
+  if (checkingMembership) {
+    return (
+      <div className="mx-auto w-full max-w-[1200px]">
+        <CustomerAppBar />
+        <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+            <p className="mt-3 text-gray-500">กำลังตรวจสอบสิทธิ์...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1200px]">

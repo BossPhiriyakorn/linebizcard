@@ -24,9 +24,19 @@ function HomeContent() {
   useEffect(() => {
     const created = searchParams.get('created') === '1';
     const updated = searchParams.get('updated') === '1';
-    if (created) setAlert({ show: true, msg: 'สร้างการ์ดสำเร็จ! คัดลอกลิงค์เพื่อแชร์ใน LINE', type: 'success' });
-    if (updated) setAlert({ show: true, msg: 'แก้ไขการ์ดสำเร็จ!', type: 'success' });
-    if (created || updated) {
+    const membershipExpiredRedirect = searchParams.get('membership_expired') === '1';
+    
+    if (membershipExpiredRedirect) {
+      setAlert({ show: true, msg: 'สมาชิกหมดอายุ ไม่สามารถใช้งานการ์ดได้ กรุณาต่ออายุสมาชิก', type: 'error' });
+      setMembershipExpired(true);
+      window.history.replaceState({}, '', '/home');
+      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 6000);
+    } else if (created) {
+      setAlert({ show: true, msg: 'สร้างการ์ดสำเร็จ! คัดลอกลิงค์เพื่อแชร์ใน LINE', type: 'success' });
+      window.history.replaceState({}, '', '/home');
+      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 5000);
+    } else if (updated) {
+      setAlert({ show: true, msg: 'แก้ไขการ์ดสำเร็จ!', type: 'success' });
       window.history.replaceState({}, '', '/home');
       setTimeout(() => setAlert((a) => ({ ...a, show: false })), 5000);
     }
@@ -187,12 +197,14 @@ function HomeContent() {
             <div className="min-w-0">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-lg font-bold text-gray-800 md:text-xl">การ์ดของฉัน</h3>
-                <Link
-                  href="/my-cards"
-                  className="text-sm font-medium text-[#1DB446] no-underline hover:underline"
-                >
-                  ดูทั้งหมด
-                </Link>
+                {!membershipExpired && (
+                  <Link
+                    href="/my-cards"
+                    className="text-sm font-medium text-[#1DB446] no-underline hover:underline"
+                  >
+                    ดูทั้งหมด
+                  </Link>
+                )}
               </div>
 
               {membershipExpired ? (
