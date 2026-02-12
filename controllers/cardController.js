@@ -4,8 +4,9 @@ const path = require('path');
 require('dotenv').config();
 const { generateUniqueId, getJsonFileName } = require('../utils/uniqueId');
 const { replaceTemplatePlaceholders, createFlexMessageJson } = require('../utils/templateEngine');
-const { convertUploadedToWebp } = require('../utils/imageToWebp');
+const { convertUploadedToWebp, adjustForCardDisplay } = require('../utils/imageToWebp');
 const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
+const { uploadImage, uploadJson, getFileContent, deleteFile, isDriveEnabled, transformDriveUrl, transformDriveUrlsInString } = require('../utils/googleDrive');
 
 // โฟลเดอร์ json — ใช้ process.cwd() ให้ตรงกับ express.static('json') ใน server.js เพื่อให้เขียนกับส่งจากที่เดียวกัน
 const jsonDir = path.join(process.cwd(), 'json');
@@ -152,23 +153,65 @@ async function createCard(req, res) {
             }
         }
 
-        // สร้าง image URLs — เก็บแยกโฟลเดอร์ตาม user id (uploads/images/{user_id}/)
+        // สร้าง image URLs — ถ้าเปิด Drive ใช้ URL จาก Drive ไม่เก็บในโปรเจค
         const uploadBase = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR || 'uploads/images'}`;
         const userSegment = String(userId);
         let imageUrl1 = '';
         let imageUrl2 = '';
+        let driveImageFileId = null;
+
         if (req.files) {
             if (req.files.image1 && req.files.image1[0]) {
-                imageUrl1 = `${uploadBase}/${userSegment}/${req.files.image1[0].filename}`;
+                const file1 = req.files.image1[0];
+                if (isDriveEnabled()) {
+                    const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, file1.filename);
+                    let buffer = await fs.readFile(absPath);
+                    buffer = await adjustForCardDisplay(buffer); // ปรับรูป portrait ให้ไม่หัวขาดใน LINE
+                    const { fileId, url } = await uploadImage(userId, buffer, file1.mimetype || 'image/webp', file1.filename);
+                    driveImageFileId = fileId;
+                    imageUrl1 = url;
+                    await fs.remove(absPath).catch(() => {});
+                } else {
+                    // ปรับรูปสำหรับ local storage ด้วย
+                    const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, file1.filename);
+                    const buffer = await fs.readFile(absPath);
+                    const adjusted = await adjustForCardDisplay(buffer);
+                    if (adjusted !== buffer) await fs.writeFile(absPath, adjusted);
+                    imageUrl1 = `${uploadBase}/${userSegment}/${file1.filename}`;
+                }
             }
             if (req.files.image2 && req.files.image2[0]) {
-                imageUrl2 = `${uploadBase}/${userSegment}/${req.files.image2[0].filename}`;
+                const file2 = req.files.image2[0];
+                if (isDriveEnabled()) {
+                    const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, file2.filename);
+                    let buffer = await fs.readFile(absPath);
+                    buffer = await adjustForCardDisplay(buffer);
+                    const { url } = await uploadImage(userId, buffer, file2.mimetype || 'image/webp', file2.filename);
+                    imageUrl2 = url;
+                    await fs.remove(absPath).catch(() => {});
+                } else {
+                    imageUrl2 = `${uploadBase}/${userSegment}/${file2.filename}`;
+                }
             }
         } else if (req.file) {
-            imageUrl1 = `${uploadBase}/${userSegment}/${req.file.filename}`;
-            imageUrl2 = imageUrl1;
+            if (isDriveEnabled()) {
+                const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, req.file.filename);
+                let buffer = await fs.readFile(absPath);
+                buffer = await adjustForCardDisplay(buffer); // ปรับรูป portrait ให้ไม่หัวขาดใน LINE
+                const { fileId, url } = await uploadImage(userId, buffer, req.file.mimetype || 'image/webp', req.file.filename);
+                driveImageFileId = fileId;
+                imageUrl1 = url;
+                imageUrl2 = url;
+                await fs.remove(absPath).catch(() => {});
+            } else {
+                const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, req.file.filename);
+                const buffer = await fs.readFile(absPath);
+                const adjusted = await adjustForCardDisplay(buffer);
+                if (adjusted !== buffer) await fs.writeFile(absPath, adjusted);
+                imageUrl1 = `${uploadBase}/${userSegment}/${req.file.filename}`;
+                imageUrl2 = imageUrl1;
+            }
         }
-        // การ์ดที่ 2–4 ใช้ดีไซน์ใน template — ถ้าไม่มีรูปการ์ด 2 ให้ใช้รูปการ์ดแรก
         if (!imageUrl2 && imageUrl1) {
             imageUrl2 = imageUrl1;
         }
@@ -220,19 +263,23 @@ async function createCard(req, res) {
         const altText = (tectony1[0] && tectony1[0].linemsg) || `การ์ดของ ${fullName || name}`;
         const flexMessageJson = createFlexMessageJson(flexMessage, altText);
 
-        // ใช้ uniqueId และ liffUrl ที่สร้างไว้แล้ว
         const jsonFileName = getJsonFileName(uniqueId);
         const jsonFilePath = path.join(jsonDir, jsonFileName);
+        let driveJsonFileId = null;
 
-        // บันทึก JSON file
-        await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
-        jsonWrittenPath = jsonFilePath;
+        if (isDriveEnabled()) {
+            const { fileId } = await uploadJson(userId, flexMessageJson, jsonFileName);
+            driveJsonFileId = fileId;
+        } else {
+            await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
+            jsonWrittenPath = jsonFilePath;
+        }
 
         // บันทึกลง Database (PII เข้ารหัส AES-256)
         const insertResult = await pool.query(
             `INSERT INTO user_cards 
-            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type, drive_image_file_id, drive_json_file_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING *`,
             [
                 uniqueId,
@@ -247,7 +294,9 @@ async function createCard(req, res) {
                 JSON.stringify(flexMessageJson),
                 liffUrl,
                 expiresAt,
-                cardType
+                cardType,
+                driveImageFileId,
+                driveJsonFileId
             ]
         );
 
@@ -309,13 +358,14 @@ async function getMyCards(req, res) {
             [userId]
         );
 
-        // ถอดรหัส PII ก่อนส่งให้ frontend แสดงผล
+        // ถอดรหัส PII ก่อนส่งให้ frontend แสดงผล + แปลง Drive URL เก่าเป็น proxy URL
         const data = result.rows.map((row) => ({
             ...row,
             user_name: decryptIfEncrypted(row.user_name),
             user_phone: decryptIfEncrypted(row.user_phone),
             user_email: decryptIfEncrypted(row.user_email),
-            user_description: row.user_description != null && row.user_description !== '' ? decryptIfEncrypted(row.user_description) : (row.user_description ?? null)
+            user_description: row.user_description != null && row.user_description !== '' ? decryptIfEncrypted(row.user_description) : (row.user_description ?? null),
+            user_image: transformDriveUrl(row.user_image)
         }));
 
         res.json({
@@ -363,7 +413,8 @@ async function getCardById(req, res) {
             user_name: decryptIfEncrypted(row.user_name),
             user_phone: decryptIfEncrypted(row.user_phone),
             user_email: decryptIfEncrypted(row.user_email),
-            user_description: row.user_description ? decryptIfEncrypted(row.user_description) : row.user_description
+            user_description: row.user_description ? decryptIfEncrypted(row.user_description) : row.user_description,
+            user_image: transformDriveUrl(row.user_image)
         };
 
         res.json({
@@ -452,13 +503,34 @@ async function updateCard(req, res) {
         const uploadBase = `${process.env.BASE_URL}/${process.env.UPLOAD_DIR || 'uploads/images'}`;
         const userSegment = String(userId);
         let imageUrl1 = card.user_image || '';
+        let driveImageFileId = card.drive_image_file_id || null;
+
         if (req.files && req.files.image1 && req.files.image1[0]) {
-            imageUrl1 = `${uploadBase}/${userSegment}/${req.files.image1[0].filename}`;
-            if (card.user_image) {
-                const rel = card.user_image.replace(process.env.BASE_URL || '', '').replace(/^\//, '');
-                const oldPath = path.join(__dirname, '..', rel);
-                fs.remove(oldPath).catch(() => {});
+            const file1 = req.files.image1[0];
+            if (isDriveEnabled()) {
+                // อัปโหลดรูปใหม่ไป Drive (ปรับ portrait ก่อน)
+                const absPath = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads/images', userSegment, file1.filename);
+                let buffer = await fs.readFile(absPath);
+                buffer = await adjustForCardDisplay(buffer);
+                const { fileId, url } = await uploadImage(userId, buffer, file1.mimetype || 'image/webp', file1.filename);
+                // ลบรูปเก่าบน Drive (ถ้ามี)
+                if (card.drive_image_file_id) {
+                    try { await deleteFile(card.drive_image_file_id); } catch (e) { console.error('Delete old Drive image:', e.message); }
+                }
+                driveImageFileId = fileId;
+                imageUrl1 = url;
+                await fs.remove(absPath).catch(() => {}); // ลบไฟล์ local
+            } else {
+                imageUrl1 = `${uploadBase}/${userSegment}/${file1.filename}`;
+                if (card.user_image) {
+                    const rel = card.user_image.replace(process.env.BASE_URL || '', '').replace(/^\//, '');
+                    const oldPath = path.join(__dirname, '..', rel);
+                    fs.remove(oldPath).catch(() => {});
+                }
             }
+        } else {
+            // ไม่ได้อัปโหลดรูปใหม่ — แปลง URL เก่าเป็น proxy URL
+            imageUrl1 = transformDriveUrl(imageUrl1);
         }
         const imageUrl2 = imageUrl1;
 
@@ -499,14 +571,26 @@ async function updateCard(req, res) {
         const altText = (tectony1[0] && tectony1[0].linemsg) || `การ์ดของ ${fullName || 'ผู้ใช้'}`;
         const flexMessageJson = createFlexMessageJson(flexMessage, altText);
 
-        const jsonFilePath = path.join(jsonDir, card.json_file_name);
-        await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
+        let driveJsonFileId = card.drive_json_file_id || null;
+        if (isDriveEnabled()) {
+            // อัปโหลด JSON ใหม่ไป Drive
+            const { fileId } = await uploadJson(userId, flexMessageJson, card.json_file_name);
+            // ลบ JSON เก่าบน Drive (ถ้ามี)
+            if (card.drive_json_file_id && card.drive_json_file_id !== fileId) {
+                try { await deleteFile(card.drive_json_file_id); } catch (e) { console.error('Delete old Drive JSON:', e.message); }
+            }
+            driveJsonFileId = fileId;
+        } else {
+            const jsonFilePath = path.join(jsonDir, card.json_file_name);
+            await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
+        }
 
         const descriptionVal = (description !== undefined && description !== null) ? String(description) : (cardDesc || '');
         await pool.query(
             `UPDATE user_cards SET 
                 user_name = $1, user_phone = $2, user_email = $3, user_image = $4, 
-                user_description = $5, flex_message_json = $6, updated_at = CURRENT_TIMESTAMP 
+                user_description = $5, flex_message_json = $6, updated_at = CURRENT_TIMESTAMP,
+                drive_image_file_id = $9, drive_json_file_id = $10
             WHERE id = $7 AND user_id = $8`,
             [
                 encrypt(fullName || null),
@@ -516,7 +600,9 @@ async function updateCard(req, res) {
                 encrypt(descriptionVal || null),
                 JSON.stringify(flexMessageJson),
                 id,
-                userId
+                userId,
+                driveImageFileId,
+                driveJsonFileId
             ]
         );
 
@@ -574,7 +660,23 @@ async function deleteCard(req, res) {
 
         const card = cardResult.rows[0];
 
-        // ลบ JSON file
+        // ลบไฟล์บน Google Drive (ถ้ามี)
+        if (card.drive_json_file_id) {
+            try {
+                await deleteFile(card.drive_json_file_id);
+            } catch (e) {
+                console.error('Error deleting Drive JSON file:', e && e.message ? e.message : '');
+            }
+        }
+        if (card.drive_image_file_id) {
+            try {
+                await deleteFile(card.drive_image_file_id);
+            } catch (e) {
+                console.error('Error deleting Drive image file:', e && e.message ? e.message : '');
+            }
+        }
+
+        // ลบ JSON file (local)
         const jsonFilePath = path.join(jsonDir, card.json_file_name);
         try {
             await fs.remove(jsonFilePath);
@@ -612,10 +714,66 @@ async function deleteCard(req, res) {
     }
 }
 
+/**
+ * ดึง JSON การ์ดสำหรับหน้าแชร์ — ถ้ามี drive_json_file_id จะดึงจาก Drive ไม่则会อ่านจากโฟลเดอร์ json/
+ * GET /api/card-json/:name (name = unique_id หรือชื่อไฟล์โดยไม่มี .json)
+ */
+async function getCardJson(req, res) {
+    try {
+        let name = (req.params.name || '').trim().replace(/\.json$/i, '');
+        if (!name) {
+            return res.status(400).json({ success: false, message: 'ไม่พบชื่อการ์ด' });
+        }
+        const jsonFileName = name.endsWith('.json') ? name : `${name}.json`;
+        const cardResult = await pool.query(
+            'SELECT drive_json_file_id, json_file_name FROM user_cards WHERE json_file_name = $1 LIMIT 1',
+            [jsonFileName]
+        );
+        if (cardResult.rows.length === 0) {
+            // ลอง unique_id (name อาจเป็น unique_id)
+            const byUnique = await pool.query(
+                'SELECT drive_json_file_id, json_file_name FROM user_cards WHERE unique_id = $1 LIMIT 1',
+                [name]
+            );
+            if (byUnique.rows.length === 0) {
+                return res.status(404).json({ success: false, message: 'ไม่พบการ์ด' });
+            }
+            return await serveCardJson(res, byUnique.rows[0]);
+        }
+        return await serveCardJson(res, cardResult.rows[0]);
+    } catch (err) {
+        console.error('getCardJson error:', err && err.message ? err.message : '');
+        return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในการโหลดการ์ด' });
+    }
+}
+
+async function serveCardJson(res, row) {
+    if (row.drive_json_file_id) {
+        try {
+            let content = await getFileContent(row.drive_json_file_id);
+            // แปลง URL Drive เก่า (uc?export=view) เป็น proxy URL ใน JSON
+            content = transformDriveUrlsInString(content);
+            return res.set('Content-Type', 'application/json').send(content);
+        } catch (e) {
+            console.error('Drive getFileContent error:', e && e.message ? e.message : '');
+            return res.status(502).json({ success: false, message: 'ไม่สามารถโหลดการ์ดจาก Drive ได้' });
+        }
+    }
+    const jsonPath = path.join(jsonDir, row.json_file_name);
+    try {
+        const data = await fs.readJson(jsonPath);
+        return res.json(data);
+    } catch (e) {
+        if (e.code === 'ENOENT') return res.status(404).json({ success: false, message: 'ไม่พบไฟล์การ์ด' });
+        throw e;
+    }
+}
+
 module.exports = {
     createCard,
     getMyCards,
     getCardById,
+    getCardJson,
     updateCard,
     deleteCard
 };

@@ -5,6 +5,12 @@ package-lock.json
 # Environment variables
 .env
 
+# Google Drive / Service Account (ห้าม commit ความลับ)
+Credentials.json
+**/Credentials.json
+**/secrets/*.json
+**/*-service-account*.json
+
 # Logs
 *.log
 logs/

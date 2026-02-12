@@ -22,12 +22,11 @@ async function fetcherMyCards(url) {
   return Array.isArray(data.data) ? data.data : [];
 }
 
-// ตรวจสอบว่า membership หมดอายุหรือไม่จาก profile
+// ตรวจสอบว่ามีแพ็กเกจหรือไม่จาก profile — ใช้ package_name เป็นตัวบ่งชี้
 function checkMembershipExpiredFromProfile(profile) {
-  if (!profile?.membership) return true; // ไม่มี membership = หมดอายุ
-  const remaining = profile.membership.remaining_days;
-  if (remaining === null || remaining === undefined) return true;
-  return remaining <= 0;
+  if (!profile?.membership) return true; // ไม่มี membership = ยังไม่ได้สมัคร
+  // ถ้า package_name = null/empty → ยังไม่ได้สมัครแพ็กเกจ (หรือหมดอายุแล้ว)
+  return !profile.membership.package_name;
 }
 
 function SkeletonCards() {
@@ -218,14 +217,14 @@ function MyCardsContent() {
         {!isLoading && error && error.code === 'MEMBERSHIP_EXPIRED' && (
           <div className="col-span-full rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 p-6">
             <div className="py-10 text-center">
-              <p className="mb-2 text-3xl">⏰</p>
-              <h3 className="mb-2 text-lg font-semibold text-amber-800">สมาชิกหมดอายุ</h3>
-              <p className="mb-4 text-sm text-amber-700">ไม่สามารถดู สร้าง หรือแชร์การ์ดได้ กรุณาต่ออายุสมาชิก</p>
+              <p className="mb-2 text-3xl">📦</p>
+              <h3 className="mb-2 text-lg font-semibold text-amber-800">ยังไม่ได้สมัครแพ็กเกจ</h3>
+              <p className="mb-4 text-sm text-amber-700">กรุณาสมัครแพ็กเกจเพื่อใช้งานการ์ด</p>
               <Link
                 href="/choose-package"
                 className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-500 px-5 py-3 font-semibold text-white no-underline hover:bg-amber-600"
               >
-                ต่ออายุสมาชิก
+                สมัครแพ็กเกจ
               </Link>
             </div>
           </div>

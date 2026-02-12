@@ -3,16 +3,37 @@
 import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+function getStoredToken() {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('token') || localStorage.getItem('auth_token') || null;
+}
+
 function LiffLoginContent() {
   const searchParams = useSearchParams();
   const errorMsg = searchParams.get('error');
+  const urlToken = searchParams.get('token');
 
   useEffect(() => {
-    if (!errorMsg) {
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-      window.location.href = baseUrl + '/api/auth/line/login';
+    if (typeof window === 'undefined') return;
+
+    // ถ้ามี token ใน URL (callback ส่งมา) — บันทึกแล้วไปหน้าแรก
+    if (urlToken) {
+      localStorage.setItem('token', urlToken);
+      localStorage.setItem('auth_token', urlToken);
+      window.location.replace(window.location.origin + '/home');
+      return;
     }
-  }, [errorMsg]);
+
+    // ถ้ามี token ใน localStorage อยู่แล้ว (เช่น กลับจาก LINE มาหน้า liff/login โดยไม่มี ?token=) — ไปหน้าแรกเลย ไม่ส่งไป LINE login ซ้ำ (แก้ลูป)
+    if (getStoredToken()) {
+      window.location.replace(window.location.origin + '/home');
+      return;
+    }
+
+    if (!errorMsg) {
+      window.location.href = window.location.origin + '/api/auth/line/login';
+    }
+  }, [errorMsg, urlToken]);
 
   if (!errorMsg) {
     return (

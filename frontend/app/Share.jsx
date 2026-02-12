@@ -15,7 +15,7 @@ async function fetchLiffId() {
 async function fetchJson(name) {
   const baseName = (name || '').replace(/\.json$/i, '');
   if (!baseName) throw new Error('ไม่พบชื่อการ์ดสำหรับโหลด');
-  const res = await fetch(`/json/${baseName}.json`);
+  const res = await fetch(`/api/card-json/${encodeURIComponent(baseName)}`);
   if (!res.ok) throw new Error('ไม่พบไฟล์การ์ด (ไม่พบไฟล์ JSON)');
   return res.json();
 }
@@ -110,14 +110,16 @@ export default function Share() {
         }
         await window.liff.init({ liffId: LIFF_ID });
 
-        if (!window.liff.isInClient() && !cardName) {
-          window.location.href = getLoginUrl();
+        // ถ้ามี token อยู่แล้ว (ล็อกอินแล้ว) และไม่ได้จะแชร์การ์ด → ไปหน้าแรกเลย ไม่ต้องล็อกอินซ้ำ
+        const savedToken = token || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) : null);
+        if (savedToken && !cardName) {
+          window.location.href = window.location.origin + '/home';
           return;
         }
 
-        const savedToken = token || (typeof localStorage !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('auth_token')) : null);
-        if (savedToken && !cardName && !window.liff.isInClient()) {
-          window.location.href = window.location.origin + '/home';
+        // ไม่มี token + ไม่ได้อยู่ใน LINE + ไม่มีการ์ดจะแชร์ → ไปล็อกอิน
+        if (!window.liff.isInClient() && !cardName) {
+          window.location.href = getLoginUrl();
           return;
         }
 

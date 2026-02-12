@@ -414,6 +414,7 @@ export default function UserDetailPage() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
                 >
                   <option value="">-- เลือกแพ็กเกจ --</option>
+                  <option value="NO_PACKAGE">ยังไม่ได้สมัครแพ็กเกจ</option>
                   {packages.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}

@@ -114,6 +114,33 @@ router.get('/cards/:id', authenticateToken, requireActiveUser, requireActiveMemb
 router.put('/cards/:id', authenticateToken, requireActiveUser, requireActiveMembership, uploadMultiple, handleUploadError, cardController.updateCard);
 router.delete('/cards/:id', authenticateToken, requireActiveUser, requireActiveMembership, cardController.deleteCard);
 
+// JSON การ์ดสำหรับหน้าแชร์ (ไม่ต้อง auth — ดึงจาก Drive หรือโฟลเดอร์ json/)
+router.get('/card-json/:name', cardController.getCardJson);
+
+// Proxy รูปจาก Google Drive — แก้ปัญหา Drive redirect ที่ LINE/browser ไม่แสดง
+// ใช้ cache 1 ชม. เพื่อลดการเรียก Drive API ซ้ำ
+router.get('/drive-image/:fileId', async (req, res) => {
+    try {
+        const { getImageBuffer, isDriveEnabled } = require('../utils/googleDrive');
+        const fileId = req.params.fileId;
+        if (!fileId || !isDriveEnabled()) {
+            return res.status(404).send('Not found');
+        }
+        const { buffer, mimeType } = await getImageBuffer(fileId);
+        res.set('Content-Type', mimeType);
+        res.set('Content-Length', buffer.length);
+        res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400'); // cache 1 ชม. (browser), 24 ชม. (CDN)
+        res.set('Access-Control-Allow-Origin', '*');
+        res.send(buffer);
+    } catch (err) {
+        console.error('[drive-image] Error serving image:', err && err.message ? err.message : '');
+        if (err.code === 404 || (err.errors && err.errors[0] && err.errors[0].reason === 'notFound')) {
+            return res.status(404).send('Image not found');
+        }
+        return res.status(502).send('Failed to load image');
+    }
+});
+
 // LIFF ID
 router.get('/liff-id', (req, res) => {
     res.json({
@@ -212,22 +239,33 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
             [userId]
         );
 
-        // สมาชิกภาพ (แพ็กเกจ) — ใช้แสดงวันสมัครสมาชิก, วันหมดอายุ, แพ็กเกจ
+        // สมาชิกภาพ (แพ็กเกจ) — ดึง membership ล่าสุด (รวมหมดอายุ) เพื่อแสดงวันสมัคร/หมดอายุ
+        // แต่ถ้าหมดอายุแล้ว → package_name = null (ใช้เป็นตัวบ่งชี้ว่า "ไม่มีแพ็กเกจ")
         let membership = null;
         let remainingDays = null;
         try {
             const memResult = await pool.query(
                 `SELECT m.id, m.membership_type, m.start_date, m.end_date, m.status, p.name AS package_name,
-                 GREATEST(0, EXTRACT(EPOCH FROM (m.end_date - CURRENT_TIMESTAMP)) / 86400)::INTEGER AS remaining_days
+                 GREATEST(0, EXTRACT(EPOCH FROM (m.end_date - CURRENT_TIMESTAMP)) / 86400)::INTEGER AS remaining_days,
+                 (m.end_date > CURRENT_TIMESTAMP AND m.status = 'active') AS is_active
                  FROM memberships m 
                  LEFT JOIN packages p ON p.id = m.package_id 
-                 WHERE m.user_id = $1 AND m.status = 'active' AND m.end_date > CURRENT_TIMESTAMP 
+                 WHERE m.user_id = $1 AND m.status = 'active'
                  ORDER BY m.end_date DESC LIMIT 1`,
                 [userId]
             );
             if (memResult.rows.length > 0) {
-                membership = memResult.rows[0];
-                remainingDays = membership.remaining_days;
+                const row = memResult.rows[0];
+                remainingDays = row.remaining_days;
+                membership = {
+                    membership_type: row.membership_type,
+                    start_date: row.start_date,
+                    end_date: row.end_date,
+                    status: row.status,
+                    // ถ้าหมดอายุแล้ว → package_name = null (ใช้เป็นตัวบ่งชี้ว่า "ยังไม่ได้สมัครแพ็กเกจ")
+                    package_name: row.is_active ? (row.package_name || row.membership_type) : null,
+                    remaining_days: remainingDays
+                };
             }
         } catch (e) {
             // ตาราง memberships หรือ packages อาจยังไม่มี
@@ -239,12 +277,7 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
                 ...user,
                 has_card: cardResult.rows.length > 0,
                 existing_card: cardResult.rows[0] || null,
-                membership: membership ? {
-                    package_name: membership.package_name || membership.membership_type,
-                    start_date: membership.start_date,
-                    end_date: membership.end_date,
-                    remaining_days: remainingDays
-                } : null
+                membership: membership || null
             }
         });
     } catch (error) {

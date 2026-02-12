@@ -29,6 +29,7 @@ const devOrigins = getAllowedOrigins();
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // เมื่อใช้ Turbopack (production build) กำหนด root ให้ชี้ไปที่ frontend
   turbopack: {
     root: path.resolve(__dirname),
   },

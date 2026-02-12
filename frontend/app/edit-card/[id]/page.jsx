@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import CustomerAppBar from '../../components/CustomerAppBar';
-import { getToken, getHeaders } from '../../utils/auth';
+import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../../utils/auth';
 
 const inputClass =
   'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
@@ -23,15 +23,22 @@ export default function EditCardPage() {
 
   useEffect(() => {
     if (!id) return;
+    if (!getToken()) {
+      window.location.href = '/liff/login';
+      return;
+    }
     fetch('/api/cards/' + id, { headers: getHeaders() })
       .then((r) => {
-        if (r.status === 401) {
-          window.location.href = '/';
-          return null;
-        }
+        if (handleAuthResponse(r)) return null; // 401 → ไป login
+        if (r.status === 403) return r.json(); // อาจเป็น MEMBERSHIP_EXPIRED
         return r.json();
       })
       .then((data) => {
+        if (data === null) return;
+        if (isMembershipExpired(data)) {
+          router.replace('/home?membership_expired=1');
+          return;
+        }
         if (data?.success && data.data) {
           const c = data.data;
           setCard(c);
@@ -41,10 +48,12 @@ export default function EditCardPage() {
             email: c.user_email || '',
             description: c.user_description || '',
           });
+        } else {
+          setAlert({ show: true, msg: data?.message || 'โหลดข้อมูลไม่สำเร็จ', type: 'error' });
         }
       })
       .catch(() => setAlert({ show: true, msg: 'โหลดข้อมูลไม่สำเร็จ', type: 'error' }));
-  }, [id]);
+  }, [id, router]);
 
   const handlePhoneChange = (e) => {
     const v = e.target.value.replace(/\D/g, '').slice(0, 10);
@@ -91,7 +100,16 @@ export default function EditCardPage() {
         headers: getHeaders(),
         body: fd,
       });
-      const data = await res.json();
+      if (handleAuthResponse(res)) {
+        setLoading(false);
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (isMembershipExpired(data)) {
+        setLoading(false);
+        router.replace('/home?membership_expired=1');
+        return;
+      }
       if (data.success) {
         setAlert({ show: true, msg: 'แก้ไขการ์ดสำเร็จ', type: 'success' });
         router.replace('/home?updated=1');

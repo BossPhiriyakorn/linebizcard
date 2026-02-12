@@ -719,20 +719,32 @@ async function updateUserMembership(req, res) {
         const values = [];
         let idx = 1;
 
-        if (end_date !== undefined && end_date !== null && end_date !== '') {
-            const endDate = new Date(end_date);
-            if (!Number.isNaN(endDate.getTime())) {
-                updates.push(`end_date = $${idx}`);
-                values.push(endDate);
-                idx += 1;
+        // ถ้าเลือก "ยังไม่ได้สมัครแพ็กเกจ" (NO_PACKAGE) → เซ็ต package_id = NULL และ end_date = เมื่อวาน (หมดอายุแล้ว)
+        if (package_id === 'NO_PACKAGE') {
+            updates.push(`package_id = NULL`);
+            // เซ็ต end_date เป็นเมื่อวาน (เพื่อให้หมดอายุ)
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            updates.push(`end_date = $${idx}`);
+            values.push(yesterday);
+            idx += 1;
+        } else {
+            // กรณีปกติ
+            if (end_date !== undefined && end_date !== null && end_date !== '') {
+                const endDate = new Date(end_date);
+                if (!Number.isNaN(endDate.getTime())) {
+                    updates.push(`end_date = $${idx}`);
+                    values.push(endDate);
+                    idx += 1;
+                }
             }
-        }
-        if (package_id !== undefined && package_id !== null && package_id !== '') {
-            const pkgId = parseInt(package_id, 10);
-            if (!Number.isNaN(pkgId)) {
-                updates.push(`package_id = $${idx}`);
-                values.push(pkgId);
-                idx += 1;
+            if (package_id !== undefined && package_id !== null && package_id !== '') {
+                const pkgId = parseInt(package_id, 10);
+                if (!Number.isNaN(pkgId)) {
+                    updates.push(`package_id = $${idx}`);
+                    values.push(pkgId);
+                    idx += 1;
+                }
             }
         }
 

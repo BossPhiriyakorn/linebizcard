@@ -13,7 +13,8 @@ export function getHeaders() {
 
 /**
  * ลบ token ลูกค้าและ redirect ไปหน้าเข้าสู่ระบบ (LINE/LIFF)
- * ใช้เมื่อได้ 401/403 จาก API ลูกค้า — ลูกค้าเข้าใช้งานผ่าน LINE จึงพาไป /liff/login
+ * ใช้เมื่อได้ 401 (token หมดอายุ) หรือ 403 จาก profile (บัญชีถูกระงับ) เท่านั้น
+ * ห้ามเรียกเมื่อ 403 จาก MEMBERSHIP_EXPIRED — ให้แต่ละหน้าจัดการเอง
  */
 export function clearTokenAndRedirectToLogin() {
   if (typeof window === 'undefined') return;

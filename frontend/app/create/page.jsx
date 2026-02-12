@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import Cropper from 'react-easy-crop';
 import CustomerAppBar from '../components/CustomerAppBar';
 import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
 
@@ -12,12 +13,11 @@ const sectionTitleClass =
   'mb-3 flex items-center gap-2.5 border-b-2 border-[#1DB446] pb-2.5 text-lg font-bold text-[#1DB446]';
 const numberBadge = 'inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#1DB446] text-sm font-bold text-white';
 
-// ตรวจสอบว่า membership หมดอายุหรือไม่จาก profile
+// ตรวจสอบว่ามีแพ็กเกจหรือไม่จาก profile — ใช้ package_name เป็นตัวบ่งชี้
 function checkMembershipExpiredFromProfile(profile) {
-  if (!profile?.membership) return true; // ไม่มี membership = หมดอายุ
-  const remaining = profile.membership.remaining_days;
-  if (remaining === null || remaining === undefined) return true;
-  return remaining <= 0;
+  if (!profile?.membership) return true; // ไม่มี membership = ยังไม่ได้สมัคร
+  // ถ้า package_name = null/empty → ยังไม่ได้สมัครแพ็กเกจ (หรือหมดอายุแล้ว)
+  return !profile.membership.package_name;
 }
 
 function CreateContent() {
@@ -35,6 +35,16 @@ function CreateContent() {
   const [createdSuccess, setCreatedSuccess] = useState(false);
   const [compressThresholdMB, setCompressThresholdMB] = useState(2); // ค่า default จนกว่าจะดึงจาก API
   const [checkingMembership, setCheckingMembership] = useState(true);
+
+  // ครอปรูปก่อนอัปโหลด — มีไฟล์เดียว: เลือกครอปหรือใช้รูปเต็ม แล้ว compress แล้วส่งไปสร้างการ์ด
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null); // object URL
+  const [originalFileForCrop, setOriginalFileForCrop] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [cropConfirming, setCropConfirming] = useState(false);
+  const [cropAspect, setCropAspect] = useState(3 / 4); // 3/4 = แนวตั้ง (default), 4/3 = แนวนอน, undefined = อิสระ, 1 = จัตุรัส
 
   useEffect(() => {
     const urlToken = searchParams.get('token');
@@ -205,6 +215,99 @@ function CreateContent() {
     });
   };
 
+  const createImage = (url) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.addEventListener('load', () => resolve(img));
+      img.addEventListener('error', (e) => reject(e));
+      img.src = url;
+    });
+
+  /**
+   * ตัดรูปตามพื้นที่ที่เลือก (croppedAreaPixels) — ได้ไฟล์เดียวสำหรับใช้สร้างการ์ด
+   * ถ้า pixelCrop เป็น null ใช้รูปเต็ม
+   */
+  const getCroppedImage = useCallback(async (imageSrc, pixelCrop) => {
+    const image = await createImage(imageSrc);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let crop = pixelCrop;
+    if (!crop || crop.width <= 0 || crop.height <= 0) {
+      crop = { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
+    }
+
+    canvas.width = crop.width;
+    canvas.height = crop.height;
+    ctx.drawImage(
+      image,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      0,
+      0,
+      crop.width,
+      crop.height
+    );
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const file = new File([blob], 'cropped-image.jpg', { type: 'image/jpeg' });
+            resolve(file);
+          } else reject(new Error('ไม่สามารถตัดรูปได้'));
+        },
+        'image/jpeg',
+        0.95
+      );
+    });
+  }, []);
+
+  const closeCropModal = useCallback(() => {
+    setCropModalOpen(false);
+    setCropConfirming(false);
+    if (imageToCrop) URL.revokeObjectURL(imageToCrop);
+    setImageToCrop(null);
+    setOriginalFileForCrop(null);
+    setCroppedAreaPixels(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+  }, [imageToCrop]);
+
+  const onCropComplete = useCallback((_, areaPixels) => {
+    setCroppedAreaPixels(areaPixels);
+  }, []);
+
+  const handleUseFullImage = useCallback(() => {
+    if (!originalFileForCrop) return;
+    setImage1(originalFileForCrop);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(originalFileForCrop);
+    });
+    closeCropModal();
+  }, [originalFileForCrop, closeCropModal]);
+
+  const handleConfirmCrop = useCallback(async () => {
+    if (!imageToCrop) return;
+    setCropConfirming(true);
+    try {
+      const croppedFile = await getCroppedImage(imageToCrop, croppedAreaPixels);
+      setImage1(croppedFile);
+      setImagePreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(croppedFile);
+      });
+      closeCropModal();
+    } catch (err) {
+      showAlertMsg(err?.message || 'ครอปรูปไม่สำเร็จ', 'error');
+    } finally {
+      setCropConfirming(false);
+    }
+  }, [imageToCrop, croppedAreaPixels, getCroppedImage, closeCropModal]);
+
   const handleSelectTemplate = (t) => {
     setSelectedTemplate(t);
     setStep(2);
@@ -236,25 +339,41 @@ function CreateContent() {
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0] || null;
-    if (file && file.size === 0) {
+    e.target.value = '';
+    if (!file) return;
+    if (file.size === 0) {
       showAlertMsg('ไฟล์รูปว่างหรือไม่รองรับ (ลองเลือกจากอัลบั้มหรือบันทึกรูปก่อนอัปโหลด)', 'error');
-      e.target.value = '';
       return;
     }
-    
-    // Log ข้อมูลไฟล์เพื่อ debug
+
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
+      file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+
     if (file) {
       const isCamera = isLikelyCameraPhoto(file);
       const fileInfo = `[File-Info] name: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)}MB, type: ${file.type}, likelyCamera: ${isCamera}`;
       console.log(fileInfo);
       sendLogToServer('info', fileInfo);
     }
-    
-    setImage1(file);
-    setImagePreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return file ? URL.createObjectURL(file) : null;
-    });
+
+    // HEIC บrowser วาดไม่ได้ — ไม่เปิดครอป ใช้รูปเต็มเลย
+    if (isHeic) {
+      setImage1(file);
+      setImagePreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
+      return;
+    }
+
+    // เปิดโมดัลครอป — เริ่มต้นเป็นแนวตั้ง (3:4) เลือกเปลี่ยนเป็นแนวนอนหรืออิสระได้
+    setOriginalFileForCrop(file);
+    setImageToCrop(URL.createObjectURL(file));
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+    setCropAspect(3 / 4); // default แนวตั้ง (สูงกว่า wide)
+    setCropModalOpen(true);
   };
 
   useEffect(() => {
@@ -434,6 +553,87 @@ function CreateContent() {
   return (
     <div className="mx-auto w-full max-w-[1200px]">
       <CustomerAppBar />
+
+      {/* โมดัลครอปรูป — สี่เหลี่ยมปรับเข้าออกได้อิสระ หรือเลือกใช้รูปเต็ม (ไฟล์เดียว ครอปหรือเต็ม → แปลง → เก็บใช้สร้างการ์ด) */}
+      {cropModalOpen && imageToCrop && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-black/90">
+          {/* ความสูงคงที่เพื่อหลีกเลี่ยงปัญหา cropper ใน modal (react-easy-crop known issue) — aspect = width/height, 3/4 = แนวตั้ง */}
+          <div className="relative w-full flex-1 min-h-[50vh]">
+            <Cropper
+              key={`crop-${imageToCrop}-${cropAspect ?? 'free'}`}
+              image={imageToCrop}
+              crop={crop}
+              zoom={zoom}
+              aspect={cropAspect}
+              cropShape="rect"
+              showGrid={true}
+              onCropChange={setCrop}
+              onZoomChange={setZoom}
+              onCropComplete={onCropComplete}
+              style={{ containerStyle: { background: '#000' }, cropAreaStyle: { border: '2px solid #1DB446' } }}
+            />
+          </div>
+          <div className="flex flex-col gap-3 border-t border-gray-700 bg-gray-900/95 px-4 py-4 safe-area-pb">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="w-full text-center text-sm text-gray-400 mb-0.5">เลือกกรอบตั้ง หรือ นอน:</span>
+              {[
+                { label: 'แนวตั้ง 3:4', value: 3 / 4 },
+                { label: 'แนวนอน 4:3', value: 4 / 3 },
+                { label: 'อิสระ', value: undefined },
+                { label: 'จัตุรัส 1:1', value: 1 },
+              ].map(({ label, value }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setCropAspect(value)}
+                  className={`min-h-[36px] rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    cropAspect === value
+                      ? 'bg-[#1DB446] text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+            <span className="text-sm text-gray-400">ซูม:</span>
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-24 accent-[#1DB446]"
+            />
+            <button
+              type="button"
+              onClick={closeCropModal}
+              className="min-h-[44px] rounded-lg border border-gray-500 px-4 py-2.5 font-semibold text-gray-300 hover:bg-gray-700"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleUseFullImage}
+              className="min-h-[44px] rounded-lg border-2 border-gray-400 bg-transparent px-5 py-2.5 font-semibold text-white hover:bg-gray-700"
+            >
+              ใช้รูปเต็ม
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmCrop}
+              disabled={cropConfirming}
+              className="min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-2.5 font-semibold text-white hover:bg-[#0FA03A] disabled:opacity-50"
+            >
+              {cropConfirming ? 'กำลังตัดรูป...' : 'ยืนยันครอป'}
+            </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ก้อนเดียว: หัวข้อ + แจ้งเตือน + เนื้อหาขั้นตอน */}
       <div className="rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-8">
         <div className="mb-4 border-b-2 border-gray-100 pb-4">
@@ -629,7 +829,7 @@ function CreateContent() {
                     onChange={handleImageChange}
                     className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white"
                   />
-                  <small className="mt-1 block text-sm italic text-gray-500">รูปภาพสำหรับการ์ดแรก (การ์ดอื่นใช้ดีไซน์ใน template) รองรับทุกรูปแบบรูปภาพ สูงสุด 1GB — ระบบแปลงเป็น WebP อัตโนมัติ</small>
+                  <small className="mt-1 block text-sm italic text-gray-500">เลือกรูปแล้วจะเปิดหน้าครอป — ปรับกรอบสี่เหลี่ยมได้อิสระ หรือกด &quot;ใช้รูปเต็ม&quot; แล้วยืนยัน ระบบจะใช้ไฟล์เดียว (ครอปหรือเต็ม) แปลงและเก็บเพื่อสร้างการ์ด</small>
                   {imagePreviewUrl && (
                     <div className="mt-3 text-center">
                       <img src={imagePreviewUrl} alt="Preview" className="mx-auto max-h-[200px] max-w-full rounded-lg object-cover shadow" />

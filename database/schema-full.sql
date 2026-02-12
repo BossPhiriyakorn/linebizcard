@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS user_cards (
     card_type VARCHAR(20) DEFAULT 'normal',
     custom_expires_at TIMESTAMP,
     created_by_admin_id INTEGER,
+    drive_image_file_id VARCHAR(100),
+    drive_json_file_id VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -148,6 +150,8 @@ ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS card_type VARCHAR(20) DEFAULT 'normal';
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS custom_expires_at TIMESTAMP;
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS created_by_admin_id INTEGER;
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_image_file_id VARCHAR(100);
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_json_file_id VARCHAR(100);
 
 ALTER TABLE memberships ADD COLUMN IF NOT EXISTS package_id INTEGER;
 DO $$

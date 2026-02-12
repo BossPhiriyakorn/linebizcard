@@ -167,7 +167,36 @@ async function convertUploadedToWebp(req) {
     }
 }
 
+/**
+ * ปรับรูปให้เหมาะกับ LINE Flex Message card (hero image)
+ * ปัญหา: LINE ใช้ aspectMode: "cover" + default aspectRatio 1:1 ทำให้ center-crop รูป portrait → หัวถูกตัด
+ * วิธีแก้: ถ้ารูปสูงกว่ากว้าง (portrait) ครอปจากด้านบนเป็นสี่เหลี่ยมจัตุรัส เพื่อให้ LINE แสดงได้โดยไม่ต้อง crop เพิ่ม
+ * @param {Buffer} buffer - buffer ของรูป (WebP หรือ format อื่น)
+ * @returns {Promise<Buffer>} buffer ที่ปรับแล้ว (หรือ buffer เดิมถ้าไม่ต้องปรับ)
+ */
+async function adjustForCardDisplay(buffer) {
+    try {
+        const metadata = await sharp(buffer).metadata();
+        if (!metadata.width || !metadata.height) return buffer;
+
+        // ถ้ารูปเป็น portrait (สูงกว่ากว้าง > 5%) → ครอปเป็นสี่เหลี่ยมจัตุรัสจากด้านบน
+        if (metadata.height > metadata.width * 1.05) {
+            console.log(`[adjustForCardDisplay] portrait ${metadata.width}x${metadata.height} → crop to ${metadata.width}x${metadata.width} from top`);
+            return sharp(buffer)
+                .resize(metadata.width, metadata.width, { fit: 'cover', position: 'top' })
+                .webp({ quality: 85 })
+                .toBuffer();
+        }
+
+        return buffer;
+    } catch (err) {
+        console.error('[adjustForCardDisplay] error:', err && err.message ? err.message : '');
+        return buffer; // ถ้า error คืน buffer เดิม
+    }
+}
+
 module.exports = {
     convertToWebp,
-    convertUploadedToWebp
+    convertUploadedToWebp,
+    adjustForCardDisplay
 };

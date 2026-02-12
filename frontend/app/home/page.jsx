@@ -27,7 +27,7 @@ function HomeContent() {
     const membershipExpiredRedirect = searchParams.get('membership_expired') === '1';
     
     if (membershipExpiredRedirect) {
-      setAlert({ show: true, msg: 'สมาชิกหมดอายุ ไม่สามารถใช้งานการ์ดได้ กรุณาต่ออายุสมาชิก', type: 'error' });
+      setAlert({ show: true, msg: 'ยังไม่ได้สมัครแพ็กเกจ กรุณาสมัครแพ็กเกจเพื่อใช้งานการ์ด', type: 'error' });
       setMembershipExpired(true);
       window.history.replaceState({}, '', '/home');
       setTimeout(() => setAlert((a) => ({ ...a, show: false })), 6000);
@@ -59,12 +59,12 @@ function HomeContent() {
     }
     Promise.all([
       fetch('/api/user/profile', { headers: getHeaders() }).then((r) => {
-        if (handleAuthResponse(r)) return null;
-        // ถ้า 403 จาก profile = บัญชีถูกระงับ → redirect
-        if (r.status === 403) { clearTokenAndRedirectToLogin(); return null; }
+        if (handleAuthResponse(r)) return null; // 401 → redirect ไป login
+        if (r.status === 403) { clearTokenAndRedirectToLogin(); return null; } // บัญชีถูกระงับ
         return r.json();
       }),
       fetch('/api/my-cards', { headers: getHeaders() }).then((r) => {
+        // 401 เท่านั้นที่ redirect (handleAuthResponse) — 403 จาก my-cards = สมาชิกหมดอายุ ไม่ redirect
         if (handleAuthResponse(r)) return null;
         return r.json();
       }),
@@ -72,9 +72,28 @@ function HomeContent() {
       .then(([profileRes, cardsRes]) => {
         setLoading(false);
         if (profileRes?.success && profileRes.data) setProfile(profileRes.data);
-        if (profileRes === null || (profileRes && !profileRes.success)) clearTokenAndRedirectToLogin();
-        // ตรวจสอบว่า my-cards ตอบ 403 เพราะสมาชิกหมดอายุ
+        // redirect เฉพาะเมื่อ profile ล้มเหลว (ไม่มี token / บัญชีระงับ) — ไม่ redirect เพราะสมาชิกหมดอายุ
+        if (profileRes === null || (profileRes && !profileRes.success)) {
+          clearTokenAndRedirectToLogin();
+          return;
+        }
+
+        // เช็คว่ามีแพ็กเกจหรือไม่จาก 2 แหล่ง:
+        // 1) my-cards ตอบ 403 (MEMBERSHIP_EXPIRED)
+        // 2) profile.membership.package_name = null/empty (ยังไม่ได้สมัครแพ็กเกจ หรือหมดอายุแล้ว)
+        let expired = false;
         if (isMembershipExpired(cardsRes)) {
+          expired = true;
+        }
+        // เช็คเพิ่มจาก profile data — ใช้ package_name เป็นตัวบ่งชี้
+        if (profileRes?.success && profileRes.data) {
+          const m = profileRes.data.membership;
+          if (!m || !m.package_name) {
+            expired = true;
+          }
+        }
+
+        if (expired) {
           setMembershipExpired(true);
         } else if (cardsRes?.success && Array.isArray(cardsRes.data)) {
           setCards(cardsRes.data);
@@ -209,14 +228,14 @@ function HomeContent() {
 
               {membershipExpired ? (
                 <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 py-12 text-center">
-                  <p className="mb-2 text-2xl">⏰</p>
-                  <p className="mb-2 font-medium text-amber-800">สมาชิกหมดอายุ</p>
-                  <p className="mb-4 text-sm text-amber-700">ไม่สามารถสร้างหรือแชร์การ์ดได้ กรุณาต่ออายุสมาชิก</p>
+                  <p className="mb-2 text-2xl">📦</p>
+                  <p className="mb-2 font-medium text-amber-800">ยังไม่ได้สมัครแพ็กเกจ</p>
+                  <p className="mb-4 text-sm text-amber-700">กรุณาสมัครแพ็กเกจเพื่อใช้งานการ์ด</p>
                   <Link
                     href="/choose-package"
                     className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-5 py-3 font-semibold text-white no-underline hover:bg-amber-600"
                   >
-                    ต่ออายุสมาชิก
+                    สมัครแพ็กเกจ
                   </Link>
                 </div>
               ) : !latestCard ? (
@@ -251,26 +270,56 @@ function HomeContent() {
                     )}
                   </div>
                   <div className="mt-auto flex flex-wrap gap-2">
-                    <Link
-                      href={'/edit-card/' + latestCard.id}
-                      className="flex-1 min-w-[70px] rounded-lg bg-[#1DB446] px-3 py-2 text-center text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
-                    >
-                      แก้ไข
-                    </Link>
-                    <button
-                      type="button"
-                      className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
-                      onClick={() => copyLink(latestCard.liff_url)}
-                    >
-                      คัดลอก
-                    </button>
-                    <button
-                      type="button"
-                      className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
-                      onClick={() => shareLink(latestCard.liff_url, latestCard)}
-                    >
-                      แชร์
-                    </button>
+                    {membershipExpired ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 min-w-[70px] rounded-lg bg-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-500 cursor-not-allowed"
+                          title="ยังไม่ได้สมัครแพ็กเกจ ไม่สามารถแก้ไขได้"
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          onClick={() => copyLink(latestCard.liff_url)}
+                        >
+                          คัดลอก
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex-1 min-w-[70px] rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-400 cursor-not-allowed"
+                          title="ยังไม่ได้สมัครแพ็กเกจ ไม่สามารถแชร์ได้"
+                        >
+                          แชร์
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Link
+                          href={'/edit-card/' + latestCard.id}
+                          className="flex-1 min-w-[70px] rounded-lg bg-[#1DB446] px-3 py-2 text-center text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                        >
+                          แก้ไข
+                        </Link>
+                        <button
+                          type="button"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          onClick={() => copyLink(latestCard.liff_url)}
+                        >
+                          คัดลอก
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          onClick={() => shareLink(latestCard.liff_url, latestCard)}
+                        >
+                          แชร์
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

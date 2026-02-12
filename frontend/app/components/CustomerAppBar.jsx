@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMembershipStatus } from '../hooks/useMembershipStatus';
 
 const menuItems = [
-  { path: '/home', label: 'หน้าแรก', icon: 'home' },
-  { path: '/my-cards', label: 'การ์ดของฉัน', icon: 'cards' },
-  { path: '/create', label: 'สร้างการ์ด', icon: 'add' },
-  { path: '/package', label: 'แพ็กเกจ', icon: 'upgrade' },
-  { path: '/coupon', label: 'คูปอง', icon: 'coupon' },
-  { path: '/profile', label: 'โปรไฟล์', icon: 'profile' },
+  { path: '/home', label: 'หน้าแรก', icon: 'home', requiresActiveMembership: false },
+  { path: '/my-cards', label: 'การ์ดของฉัน', icon: 'cards', requiresActiveMembership: true },
+  { path: '/create', label: 'สร้างการ์ด', icon: 'add', requiresActiveMembership: true },
+  { path: '/package', label: 'แพ็กเกจ', icon: 'upgrade', requiresActiveMembership: false },
+  { path: '/coupon', label: 'คูปอง', icon: 'coupon', requiresActiveMembership: false },
+  { path: '/profile', label: 'โปรไฟล์', icon: 'profile', requiresActiveMembership: false },
 ];
 
 function Icon({ name }) {
@@ -65,30 +66,45 @@ function Icon({ name }) {
   return null;
 }
 
-export default function CustomerAppBar() {
+export default function CustomerAppBar({ hideMenu = false }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = usePathname();
+  const { isExpired } = useMembershipStatus();
 
   const closeDrawer = () => setDrawerOpen(false);
+  
+  const handleMenuItemClick = (e, item) => {
+    // ถ้าเมนูต้องการ active membership แต่หมดอายุแล้ว ให้ prevent default
+    if (item.requiresActiveMembership && isExpired) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+    closeDrawer();
+  };
 
   return (
     <>
       <div className="sticky top-0 z-[100] mb-4 flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.1)] md:px-6">
-        <button
-          type="button"
-          className="flex h-11 min-h-[44px] w-11 min-w-[44px] flex-col items-center justify-center gap-1 rounded-lg border-0 bg-transparent p-2.5 transition-colors hover:bg-gray-100"
-          onClick={() => setDrawerOpen(true)}
-          aria-label="เปิดเมนู"
-        >
-          <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
-          <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
-          <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
-        </button>
+        {!hideMenu && (
+          <button
+            type="button"
+            className="flex h-11 min-h-[44px] w-11 min-w-[44px] flex-col items-center justify-center gap-1 rounded-lg border-0 bg-transparent p-2.5 transition-colors hover:bg-gray-100"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="เปิดเมนู"
+          >
+            <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
+            <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
+            <span className="block h-0.5 w-[22px] rounded-full bg-gray-800" />
+          </button>
+        )}
         <Link href="/home" className="flex-1 text-lg font-bold text-[#6B46C1] no-underline md:text-xl" onClick={closeDrawer}>
           MagicBiz-Card
         </Link>
       </div>
 
+      {!hideMenu && (
+        <>
       <div
         className={`fixed inset-0 z-[200] bg-black/40 transition-all duration-300 ${drawerOpen ? 'visible opacity-100' : 'invisible opacity-0'}`}
         onClick={closeDrawer}
@@ -101,8 +117,27 @@ export default function CustomerAppBar() {
         className={`fixed left-0 top-0 z-[201] flex h-screen w-[280px] max-w-[85vw] flex-col bg-white py-4 pl-4 pr-4 shadow-[4px_0_20px_rgba(0,0,0,0.15)] transition-transform duration-300 ease-out pt-[max(env(safe-area-inset-top),12px)] pl-[max(env(safe-area-inset-left),16px)] pb-[max(env(safe-area-inset-bottom),16px)] ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="mb-3 px-1 text-xs uppercase tracking-wider text-gray-500">เมนู</div>
-        {menuItems.map(({ path, label, icon }) => {
+        {menuItems.map((item) => {
+          const { path, label, icon, requiresActiveMembership } = item;
           const isActive = pathname === path || pathname?.startsWith(path + '/');
+          const isDisabled = requiresActiveMembership && isExpired;
+          
+          if (isDisabled) {
+            // แสดงเป็น disabled state แทน Link
+            return (
+              <div
+                key={path}
+                className="mb-1 flex min-h-[44px] items-center gap-3 rounded-xl border-2 border-transparent px-4 py-3.5 text-base font-medium text-gray-400 cursor-not-allowed opacity-60"
+                title="ยังไม่ได้สมัครแพ็กเกจ กรุณาสมัครแพ็กเกจเพื่อใช้งาน"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                  <Icon name={icon} />
+                </span>
+                {label}
+              </div>
+            );
+          }
+          
           return (
             <Link
               key={path}
@@ -112,7 +147,7 @@ export default function CustomerAppBar() {
                   ? 'border-[#6B46C1] bg-[#EDE9FE] text-[#6B46C1]'
                   : 'border-transparent text-gray-800 hover:bg-gray-100'
               }`}
-              onClick={closeDrawer}
+              onClick={(e) => handleMenuItemClick(e, item)}
             >
               <span className="flex h-6 w-6 shrink-0 items-center justify-center">
                 <Icon name={icon} />
@@ -122,6 +157,8 @@ export default function CustomerAppBar() {
           );
         })}
       </div>
+        </>
+      )}
     </>
   );
 }

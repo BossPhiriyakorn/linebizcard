@@ -78,10 +78,22 @@ function RegisterLineContent() {
   const modalTitle = consentModal.type === 'privacy' ? 'นโยบายความเป็นส่วนตัว (Privacy Policy)' : 'ข้อกำหนดการใช้บริการ (Terms of Service)';
   const canAgree = scrolledToBottom || (typeof modalContent === 'string' && modalContent.length < 500);
 
+  // ปุ่มสมัครกดได้และเป็นสีเขียวเมื่อกรอกครบ (ชื่อ นามสกุล เบอร์โทร) และยอมรับทั้ง 2 ข้อ — ชื่อเล่น/อีเมลไม่บังคับ
+  const canSubmit =
+    !!form.first_name?.trim() &&
+    !!form.last_name?.trim() &&
+    !!form.phone?.trim() &&
+    form.accepted_privacy_policy &&
+    form.accepted_terms;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.first_name?.trim() || !form.last_name?.trim()) {
       setAlert({ show: true, msg: 'กรุณากรอกชื่อและนามสกุล', type: 'error' });
+      return;
+    }
+    if (!form.phone?.trim()) {
+      setAlert({ show: true, msg: 'กรุณากรอกเบอร์โทรศัพท์', type: 'error' });
       return;
     }
     if (!form.accepted_privacy_policy || !form.accepted_terms) {
@@ -105,7 +117,7 @@ function RegisterLineContent() {
 
   return (
     <div className="w-full box-border" style={{ width: '100%', minWidth: 0 }}>
-      <CustomerAppBar />
+      <CustomerAppBar hideMenu />
       <div
         className="my-6 rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-8"
         style={{ maxWidth: 500, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}
@@ -233,10 +245,14 @@ function RegisterLineContent() {
 
           <button
             type="submit"
-            className="w-full min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] disabled:bg-gray-400"
-            disabled={loading}
+            className={`w-full min-h-[44px] rounded-lg px-5 py-3 font-semibold text-white transition-all disabled:cursor-not-allowed ${
+              canSubmit && !loading
+                ? 'bg-[#1DB446] hover:bg-[#0FA03A]'
+                : 'bg-gray-400'
+            }`}
+            disabled={loading || !canSubmit}
           >
-            {loading ? 'กำลังบันทึก...' : 'บันทึก'}
+            {loading ? 'กำลังสมัคร...' : 'สมัคร'}
           </button>
         </form>
       </div>
@@ -248,7 +264,7 @@ export default function RegisterLinePage() {
   return (
     <Suspense fallback={
       <div className="w-full box-border" style={{ width: '100%', minWidth: 0 }}>
-        <CustomerAppBar />
+        <CustomerAppBar hideMenu />
         <div className="flex flex-col items-center justify-center py-16">
           <p className="text-gray-500">กำลังโหลด...</p>
         </div>

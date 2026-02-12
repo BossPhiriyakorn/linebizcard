@@ -1,4 +1,11 @@
 require('dotenv').config();
+
+// โหมด dev บังคับใช้ webpack แทน Turbopack (เลี่ยง error infer root เป็น frontend/app)
+// Next อ่าน turbo: !!process.env.TURBOPACK — ต้องไม่ตั้งหรือลบให้เป็น undefined (ถ้าตั้งเป็น '0' จะยังเป็น truthy)
+if (process.env.NODE_ENV !== 'production') {
+  delete process.env.TURBOPACK;
+}
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -9,9 +16,10 @@ const apiRoutes = require('./routes/api');
 const authRoutes = require('./routes/auth');
 const cmsApiRoutes = require('./routes/cmsApi');
 
+const projectRoot = __dirname;
 const PORT = process.env.PORT || 3000;
 const dev = process.env.NODE_ENV !== 'production';
-const nextApp = next({ dev, dir: path.join(__dirname, 'frontend') });
+const nextApp = next({ dev, dir: path.join(projectRoot, 'frontend') });
 const handle = nextApp.getRequestHandler();
 
 const app = express();
@@ -35,15 +43,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const dirs = ['uploads/images', 'uploads/cms/settings', 'uploads/cms/qr', 'json'];
-dirs.forEach((dir) => { fs.ensureDirSync(dir); });
+dirs.forEach((dir) => { fs.ensureDirSync(path.join(projectRoot, dir)); });
 
 app.use('/api/cms', cmsApiRoutes);
 app.use('/api', apiRoutes);
 app.use('/api', authRoutes);
 app.use('/api/auth', authRoutes);
 
-app.use('/uploads', express.static('uploads'));
-app.use('/json', express.static('json'));
+app.use('/uploads', express.static(path.join(projectRoot, 'uploads')));
+app.use('/json', express.static(path.join(projectRoot, 'json')));
 
 app.all('*', (req, res) => handle(req, res));
 
