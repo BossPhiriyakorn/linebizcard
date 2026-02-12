@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders, handleAuthResponse, clearTokenAndRedirectToLogin } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse, clearTokenAndRedirectToLogin, isMembershipExpired } from '../utils/auth';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -19,6 +19,7 @@ function HomeContent() {
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'success' });
+  const [membershipExpired, setMembershipExpired] = useState(false);
 
   useEffect(() => {
     const created = searchParams.get('created') === '1';
@@ -47,14 +48,27 @@ function HomeContent() {
       return;
     }
     Promise.all([
-      fetch('/api/user/profile', { headers: getHeaders() }).then((r) => (handleAuthResponse(r) ? null : r.json())),
-      fetch('/api/my-cards', { headers: getHeaders() }).then((r) => (handleAuthResponse(r) ? null : r.json())),
+      fetch('/api/user/profile', { headers: getHeaders() }).then((r) => {
+        if (handleAuthResponse(r)) return null;
+        // ถ้า 403 จาก profile = บัญชีถูกระงับ → redirect
+        if (r.status === 403) { clearTokenAndRedirectToLogin(); return null; }
+        return r.json();
+      }),
+      fetch('/api/my-cards', { headers: getHeaders() }).then((r) => {
+        if (handleAuthResponse(r)) return null;
+        return r.json();
+      }),
     ])
       .then(([profileRes, cardsRes]) => {
         setLoading(false);
         if (profileRes?.success && profileRes.data) setProfile(profileRes.data);
         if (profileRes === null || (profileRes && !profileRes.success)) clearTokenAndRedirectToLogin();
-        if (cardsRes?.success && Array.isArray(cardsRes.data)) setCards(cardsRes.data);
+        // ตรวจสอบว่า my-cards ตอบ 403 เพราะสมาชิกหมดอายุ
+        if (isMembershipExpired(cardsRes)) {
+          setMembershipExpired(true);
+        } else if (cardsRes?.success && Array.isArray(cardsRes.data)) {
+          setCards(cardsRes.data);
+        }
       })
       .catch(() => setLoading(false));
   }, []);
@@ -181,7 +195,19 @@ function HomeContent() {
                 </Link>
               </div>
 
-              {!latestCard ? (
+              {membershipExpired ? (
+                <div className="rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 py-12 text-center">
+                  <p className="mb-2 text-2xl">⏰</p>
+                  <p className="mb-2 font-medium text-amber-800">สมาชิกหมดอายุ</p>
+                  <p className="mb-4 text-sm text-amber-700">ไม่สามารถสร้างหรือแชร์การ์ดได้ กรุณาต่ออายุสมาชิก</p>
+                  <Link
+                    href="/choose-package"
+                    className="inline-flex items-center justify-center rounded-lg bg-amber-500 px-5 py-3 font-semibold text-white no-underline hover:bg-amber-600"
+                  >
+                    ต่ออายุสมาชิก
+                  </Link>
+                </div>
+              ) : !latestCard ? (
                 <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 py-12 text-center">
                   <p className="mb-2 font-medium text-gray-600">ยังไม่มีการ์ด</p>
                   <p className="mb-4 text-sm text-gray-500">เริ่มสร้างการ์ดแรกของคุณเลย!</p>

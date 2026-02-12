@@ -22,14 +22,26 @@ export function clearTokenAndRedirectToLogin() {
 }
 
 /**
- * ตรวจสอบ response จาก API ลูกค้า: ถ้า 401/403 ให้ลบ token และ redirect ไป /liff/login
+ * ตรวจสอบ response จาก API ลูกค้า: ถ้า 401 ให้ลบ token และ redirect ไป /liff/login
+ * หมายเหตุ: ไม่จัดการ 403 ทุกกรณีที่นี่ เพราะ 403 อาจเกิดจากสมาชิกหมดอายุ (MEMBERSHIP_EXPIRED)
+ * ซึ่งยังควรให้ลูกค้าเข้าแอปได้ — แต่ละหน้าต้องจัดการ 403 เอง
  * @param {Response} r - response จาก fetch
- * @returns {boolean} true ถ้า redirect แล้ว (caller ไม่ต้องทำอะไรต่อ), false ถ้าไม่ใช่ 401/403
+ * @returns {boolean} true ถ้า redirect แล้ว (caller ไม่ต้องทำอะไรต่อ), false ถ้าไม่ใช่ 401
  */
 export function handleAuthResponse(r) {
-  if (r && (r.status === 401 || r.status === 403)) {
+  if (r && r.status === 401) {
     clearTokenAndRedirectToLogin();
     return true;
   }
   return false;
+}
+
+/**
+ * ตรวจสอบว่า response เป็น 403 ที่เกิดจากสมาชิกหมดอายุหรือไม่
+ * ใช้กับ API ที่มี requireActiveMembership middleware
+ * @param {Object} data - JSON response body ที่ parse แล้ว
+ * @returns {boolean} true ถ้าสมาชิกหมดอายุ
+ */
+export function isMembershipExpired(data) {
+  return data && data.success === false && data.code === 'MEMBERSHIP_EXPIRED';
 }

@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
 
 const inputClass =
   'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
@@ -358,6 +358,12 @@ function CreateContent() {
         // ไปหน้าการ์ดของฉันพร้อม query ให้ SWR revalidate — ทุกยูสจะเห็นการ์ดใหม่ทันที
         router.push('/my-cards?created=1');
         return;
+      } else if (isMembershipExpired(data)) {
+        // สมาชิกหมดอายุ — แสดงข้อความแจ้ง
+        sendLogToServer('error', '[Create-Frontend] ❌ สมาชิกหมดอายุ ไม่สามารถสร้างการ์ดได้');
+        showAlertMsg('สมาชิกหมดอายุ ไม่สามารถสร้างการ์ดได้ กรุณาต่ออายุสมาชิกก่อน', 'error');
+        setLoading(false);
+        setLoadingMsg('');
       } else {
         const failMsg = `[Create-Frontend] ❌ สร้างไม่สำเร็จ: ${data.message}`;
         console.error(failMsg);

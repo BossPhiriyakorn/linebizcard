@@ -433,13 +433,14 @@ async function getUserById(req, res) {
 
         let membership = null;
         try {
+            // ค้นหา membership ล่าสุด ไม่ว่าจะ status อะไร (เพื่อให้ CMS เห็นและแก้ไขได้แม้หมดอายุ/ถูกยกเลิก)
             const memResult = await pool.query(
                 `SELECT m.id, m.membership_type, m.start_date, m.end_date, m.status, m.package_id, m.created_at,
                  p.name AS package_name,
                  GREATEST(0, EXTRACT(EPOCH FROM (m.end_date - CURRENT_TIMESTAMP)) / 86400)::INTEGER AS remaining_days
                  FROM memberships m
                  LEFT JOIN packages p ON p.id = m.package_id
-                 WHERE m.user_id = $1 AND m.status = 'active' AND m.end_date > CURRENT_TIMESTAMP 
+                 WHERE m.user_id = $1
                  ORDER BY m.end_date DESC LIMIT 1`,
                 [userId]
             );
@@ -707,14 +708,12 @@ async function updateUserMembership(req, res) {
         if (userResult.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
         }
+
+        // ค้นหา membership ล่าสุด ไม่ว่าจะ status อะไร (active, cancelled, expired)
         const memResult = await pool.query(
-            `SELECT id FROM memberships WHERE user_id = $1 AND status = 'active' ORDER BY end_date DESC LIMIT 1`,
+            `SELECT id, status FROM memberships WHERE user_id = $1 ORDER BY end_date DESC LIMIT 1`,
             [userId]
         );
-        if (memResult.rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลสมาชิกที่แก้ไขได้' });
-        }
-        const membershipId = memResult.rows[0].id;
 
         const updates = [];
         const values = [];
@@ -741,13 +740,30 @@ async function updateUserMembership(req, res) {
             return res.status(400).json({ success: false, message: 'กรุณาระบุวันหมดอายุหรือแพ็กเกจที่ต้องการแก้ไข' });
         }
 
-        updates.push(`updated_at = CURRENT_TIMESTAMP`);
-        values.push(membershipId);
+        if (memResult.rows.length > 0) {
+            // มี membership อยู่แล้ว — update
+            const membership = memResult.rows[0];
+            // ถ้า status ไม่ใช่ active ให้เปลี่ยนกลับเป็น active ด้วย (เช่น cancelled/expired)
+            if (membership.status !== 'active') {
+                updates.push(`status = 'active'`);
+            }
+            updates.push(`updated_at = CURRENT_TIMESTAMP`);
+            values.push(membership.id);
 
-        await pool.query(
-            `UPDATE memberships SET ${updates.join(', ')} WHERE id = $${idx}`,
-            values
-        );
+            await pool.query(
+                `UPDATE memberships SET ${updates.join(', ')} WHERE id = $${idx}`,
+                values
+            );
+        } else {
+            // ไม่มี membership เลย — สร้างใหม่
+            const newEndDate = end_date ? new Date(end_date) : null;
+            const newPkgId = package_id ? parseInt(package_id, 10) : null;
+            await pool.query(
+                `INSERT INTO memberships (user_id, membership_type, status, start_date, end_date, package_id, created_at, updated_at)
+                 VALUES ($1, 'standard', 'active', CURRENT_TIMESTAMP, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [userId, newEndDate, newPkgId]
+            );
+        }
 
         res.json({
             success: true,

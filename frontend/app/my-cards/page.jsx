@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import CustomerAppBar from '../components/CustomerAppBar';
-import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
+import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
 
 const MY_CARDS_KEY = '/api/my-cards';
 
@@ -13,6 +13,11 @@ async function fetcherMyCards(url) {
   const r = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
   if (handleAuthResponse(r)) throw new Error('Unauthorized');
   const data = await r.json();
+  if (isMembershipExpired(data)) {
+    const err = new Error(data?.message || 'สมาชิกหมดอายุ');
+    err.code = 'MEMBERSHIP_EXPIRED';
+    throw err;
+  }
   if (!data?.success) throw new Error(data?.message || 'โหลดข้อมูลไม่สำเร็จ');
   return Array.isArray(data.data) ? data.data : [];
 }
@@ -152,7 +157,22 @@ function MyCardsContent() {
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
         {isLoading && <SkeletonCards />}
-        {!isLoading && error && (
+        {!isLoading && error && error.code === 'MEMBERSHIP_EXPIRED' && (
+          <div className="col-span-full rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 p-6">
+            <div className="py-10 text-center">
+              <p className="mb-2 text-3xl">⏰</p>
+              <h3 className="mb-2 text-lg font-semibold text-amber-800">สมาชิกหมดอายุ</h3>
+              <p className="mb-4 text-sm text-amber-700">ไม่สามารถดู สร้าง หรือแชร์การ์ดได้ กรุณาต่ออายุสมาชิก</p>
+              <Link
+                href="/choose-package"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-500 px-5 py-3 font-semibold text-white no-underline hover:bg-amber-600"
+              >
+                ต่ออายุสมาชิก
+              </Link>
+            </div>
+          </div>
+        )}
+        {!isLoading && error && error.code !== 'MEMBERSHIP_EXPIRED' && (
           <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
             <div className="py-14 text-center text-gray-500">
               <p className="mb-4">{error.message || 'โหลดข้อมูลไม่สำเร็จ'}</p>

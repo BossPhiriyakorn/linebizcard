@@ -128,11 +128,11 @@ export default function UserDetailPage() {
   };
 
   const openEditMembership = () => {
-    if (!membership) return;
-    const end = membership.end_date ? new Date(membership.end_date) : null;
+    // รองรับทั้งกรณีมี membership อยู่แล้ว และกรณียังไม่มี (สร้างใหม่)
+    const end = membership?.end_date ? new Date(membership.end_date) : null;
     setEditForm({
       end_date: end ? end.toISOString().slice(0, 10) : '',
-      package_id: membership.package_id != null ? String(membership.package_id) : '',
+      package_id: membership?.package_id != null ? String(membership.package_id) : '',
     });
     setEditMembershipOpen(true);
   };
@@ -303,15 +303,13 @@ export default function UserDetailPage() {
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
           <span className="font-semibold">ข้อมูลสมาชิก</span>
-          {membership && (
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-              onClick={openEditMembership}
-            >
-              แก้ไข
-            </button>
-          )}
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            onClick={openEditMembership}
+          >
+            {membership ? 'แก้ไข' : 'เพิ่มสมาชิก'}
+          </button>
         </div>
         <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
           <div>
@@ -396,7 +394,7 @@ export default function UserDetailPage() {
       {editMembershipOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
-            <div className="border-b border-gray-200 px-5 py-4 font-semibold">แก้ไขข้อมูลสมาชิก</div>
+            <div className="border-b border-gray-200 px-5 py-4 font-semibold">{membership ? 'แก้ไขข้อมูลสมาชิก' : 'เพิ่มสมาชิกภาพ'}</div>
             <div className="space-y-4 p-5">
               <p className="text-xs text-slate-500">จำนวนวันคงเหลือคำนวณจาก วันปัจจุบัน ถึง วันหมดอายุ (อัปเดตอัตโนมัติเมื่อเปลี่ยนวันหมดอายุ)</p>
               <div>
