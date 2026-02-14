@@ -20,6 +20,7 @@ export default function UserDetailPage() {
   const [editForm, setEditForm] = useState({ end_date: '', package_id: '' });
   const [savingMembership, setSavingMembership] = useState(false);
   const [copiedCardId, setCopiedCardId] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   const loadDetail = () => {
     if (!id) return;
@@ -190,6 +191,26 @@ export default function UserDetailPage() {
       .catch(() => {});
   };
 
+  const deleteUser = () => {
+    if (!user || !window.confirm('ต้องการลบผู้ใช้นี้ถาวรหรือไม่? ข้อมูลในระบบและไฟล์บน Drive ของผู้ใช้จะถูกลบทั้งหมด และไม่สามารถกู้คืนได้')) return;
+    setDeletingUser(true);
+    fetch('/api/cms/users/' + user.id, { method: 'DELETE', headers: getCmsHeaders() })
+      .then((r) => {
+        if (handleCmsResponse(r)) return null;
+        return r.json().catch(() => null);
+      })
+      .then((res) => {
+        setDeletingUser(false);
+        if (res === null) return;
+        if (res.success) {
+          window.location.href = '/cms/users';
+        } else {
+          alert(res.message || 'ลบไม่สำเร็จ');
+        }
+      })
+      .catch(() => setDeletingUser(false));
+  };
+
   const user = data.user;
   const membership = data.membership;
   const cards = data.cards;
@@ -241,13 +262,23 @@ export default function UserDetailPage() {
               ระงับการใช้งาน
             </button>
           ) : (
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
-              onClick={() => setActive(user.id, true)}
-            >
-              เปิดการใช้งาน
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                onClick={() => setActive(user.id, true)}
+              >
+                เปิดการใช้งาน
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-red-600 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                onClick={deleteUser}
+                disabled={deletingUser}
+              >
+                {deletingUser ? 'กำลังลบ...' : 'ลบผู้ใช้งาน'}
+              </button>
+            </div>
           )}
         </div>
         <div className="flex flex-col gap-6 p-5 md:flex-row md:items-start">

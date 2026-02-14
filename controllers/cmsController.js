@@ -694,6 +694,48 @@ async function setUserActive(req, res) {
 }
 
 /**
+ * ลบผู้ใช้ (ลูกค้า) — แสดงปุ่มได้เฉพาะเมื่อระงับแล้ว
+ * ลบข้อมูลใน DB ที่เกี่ยวข้อง (CASCADE) และโฟลเดอร์ของ user บน Drive
+ */
+async function deleteUser(req, res) {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (isNaN(userId)) {
+            return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        }
+        const userResult = await pool.query(
+            'SELECT id, COALESCE(is_active, true) AS is_active FROM users WHERE id = $1',
+            [userId]
+        );
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
+        }
+        if (userResult.rows[0].is_active !== false) {
+            return res.status(400).json({
+                success: false,
+                message: 'กรุณาระงับผู้ใช้ก่อนจึงจะลบได้'
+            });
+        }
+
+        const { isDriveEnabled, deleteUserDriveData } = require('../utils/googleDrive');
+        if (isDriveEnabled()) {
+            try {
+                await deleteUserDriveData(userId);
+            } catch (e) {
+                console.error('CMS delete user Drive data:', e && e.message ? e.message : '');
+                // ยังดำเนินการลบ user ใน DB ต่อ
+            }
+        }
+
+        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        res.json({ success: true, message: 'ลบผู้ใช้งานแล้ว' });
+    } catch (err) {
+        console.error('CMS delete user error:', err);
+        res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' });
+    }
+}
+
+/**
  * แก้ไขข้อมูลสมาชิกของลูกค้า (วันหมดอายุ, แพ็กเกจ)
  * จำนวนวันคงเหลือคำนวณจาก วันปัจจุบัน ถึง วันหมดอายุ (ไม่ต้องเก็บใน DB)
  */
@@ -1044,7 +1086,7 @@ async function getSettings(req, res) {
         const result = await pool.query(
             `SELECT id, login_logo_url, login_bg_image_url, login_bg_color, updated_at,
               qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url,
-              privacy_policy_content, terms_of_service_content
+              privacy_policy_content, terms_of_service_content, contact_design_url
              FROM cms_settings WHERE id = 1 LIMIT 1`
         );
         const row = result.rows[0];
@@ -1054,7 +1096,7 @@ async function getSettings(req, res) {
                 data: {
                     login_logo_url: null, login_bg_image_url: null, login_bg_color: '#5b21b6', updated_at: null,
                     qr_payment_bank_name: null, qr_payment_account_no: null, qr_payment_account_name: null, qr_payment_qr_image_url: null,
-                    privacy_policy_content: null, terms_of_service_content: null
+                    privacy_policy_content: null, terms_of_service_content: null, contact_design_url: null
                 }
             });
         }
@@ -1070,7 +1112,8 @@ async function getSettings(req, res) {
                 qr_payment_account_name: decryptIfEncrypted(row.qr_payment_account_name) ?? row.qr_payment_account_name ?? null,
                 qr_payment_qr_image_url: row.qr_payment_qr_image_url || null,
                 privacy_policy_content: row.privacy_policy_content ?? '',
-                terms_of_service_content: row.terms_of_service_content ?? ''
+                terms_of_service_content: row.terms_of_service_content ?? '',
+                contact_design_url: row.contact_design_url || null
             }
         });
     } catch (err) {
@@ -1084,7 +1127,7 @@ async function getSettings(req, res) {
  */
 async function updateSettings(req, res) {
     try {
-        const { login_logo_url, login_bg_image_url, login_bg_color, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content } = req.body || {};
+        const { login_logo_url, login_bg_image_url, login_bg_color, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content, contact_design_url } = req.body || {};
         const logo = login_logo_url != null ? String(login_logo_url).trim() || null : null;
         const bgImage = login_bg_image_url != null ? String(login_bg_image_url).trim() || null : null;
         const bgColor = (login_bg_color != null && String(login_bg_color).trim()) ? String(login_bg_color).trim() : '#5b21b6';
@@ -1094,9 +1137,10 @@ async function updateSettings(req, res) {
         const qrImage = qr_payment_qr_image_url != null ? String(qr_payment_qr_image_url).trim() || null : null;
         const privacyContent = privacy_policy_content != null ? String(privacy_policy_content).trim() || null : null;
         const termsContent = terms_of_service_content != null ? String(terms_of_service_content).trim() || null : null;
+        const contactUrl = contact_design_url != null ? String(contact_design_url).trim().slice(0, 2000) || null : null;
         await pool.query(
-            `INSERT INTO cms_settings (id, login_logo_url, login_bg_image_url, login_bg_color, updated_at, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content)
-             VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP, $4, $5, $6, $7, $8, $9)
+            `INSERT INTO cms_settings (id, login_logo_url, login_bg_image_url, login_bg_color, updated_at, qr_payment_bank_name, qr_payment_account_no, qr_payment_account_name, qr_payment_qr_image_url, privacy_policy_content, terms_of_service_content, contact_design_url)
+             VALUES (1, $1, $2, $3, CURRENT_TIMESTAMP, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
                login_logo_url = EXCLUDED.login_logo_url,
                login_bg_image_url = EXCLUDED.login_bg_image_url,
@@ -1107,8 +1151,9 @@ async function updateSettings(req, res) {
                qr_payment_account_name = COALESCE(EXCLUDED.qr_payment_account_name, cms_settings.qr_payment_account_name),
                qr_payment_qr_image_url = COALESCE(EXCLUDED.qr_payment_qr_image_url, cms_settings.qr_payment_qr_image_url),
                privacy_policy_content = COALESCE(EXCLUDED.privacy_policy_content, cms_settings.privacy_policy_content),
-               terms_of_service_content = COALESCE(EXCLUDED.terms_of_service_content, cms_settings.terms_of_service_content)`,
-            [logo, bgImage, bgColor, qrBank, encrypt(qrAccNo), encrypt(qrAccName), qrImage, privacyContent, termsContent]
+               terms_of_service_content = COALESCE(EXCLUDED.terms_of_service_content, cms_settings.terms_of_service_content),
+               contact_design_url = COALESCE(EXCLUDED.contact_design_url, cms_settings.contact_design_url)`,
+            [logo, bgImage, bgColor, qrBank, encrypt(qrAccNo), encrypt(qrAccName), qrImage, privacyContent, termsContent, contactUrl]
         );
         res.json({ success: true, message: 'บันทึกตั้งค่าแล้ว' });
     } catch (err) {
@@ -1261,6 +1306,27 @@ async function updatePackage(req, res) {
     }
 }
 
+/**
+ * ลบแพ็กเกจ (ลบจากฐานข้อมูล)
+ */
+async function deletePackage(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) return res.status(400).json({ success: false, message: 'ID ไม่ถูกต้อง' });
+        const result = await pool.query('DELETE FROM packages WHERE id = $1 RETURNING id', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบแพ็กเกจ' });
+        }
+        res.json({ success: true, message: 'ลบแพ็กเกจแล้ว' });
+    } catch (err) {
+        console.error('CMS delete package error:', err);
+        if (err.code === '23503') {
+            return res.status(400).json({ success: false, message: 'ไม่สามารถลบได้ เนื่องจากมีข้อมูลอื่นอ้างอิงแพ็กเกจนี้ (เช่น สมาชิกหรือประวัติการชำระเงิน)' });
+        }
+        res.status(500).json({ success: false, message: 'ลบไม่สำเร็จ' });
+    }
+}
+
 // -----------------------------------------------------------------------------
 // คูปอง (Coupons)
 // -----------------------------------------------------------------------------
@@ -1406,6 +1472,7 @@ module.exports = {
     getUserPaymentHistory,
     verifyPendingPayment,
     setUserActive,
+    deleteUser,
     updateUserMembership,
     getAdmins,
     createAdmin,
@@ -1423,6 +1490,7 @@ module.exports = {
     getPackageById,
     createPackage,
     updatePackage,
+    deletePackage,
     getCoupons,
     getCouponById,
     createCoupon,

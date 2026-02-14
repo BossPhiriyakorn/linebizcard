@@ -66,6 +66,29 @@ export default function PackagesContent() {
     setModalOpen(true);
   };
 
+  const deletePackage = (id, name) => {
+    if (!window.confirm(`ต้องการลบแพ็กเกจ "${name || 'นี้'}" ใช่หรือไม่?\n\nการลบจะลบออกจากฐานข้อมูลถาวร`)) return;
+    fetch('/api/cms/packages/' + id, { method: 'DELETE', headers: getCmsHeaders() })
+      .then((r) => {
+        if (handleCmsResponse(r)) return null;
+        return r.json();
+      })
+      .then((data) => {
+        if (!data) return;
+        if (data.success) {
+          showAlert('ลบแพ็กเกจแล้ว', 'success');
+          load();
+          if (editingId === id) {
+            setModalOpen(false);
+            setEditingId(null);
+          }
+        } else {
+          showAlert(data.message || 'ลบไม่สำเร็จ', 'error');
+        }
+      })
+      .catch(() => showAlert('เกิดข้อผิดพลาด', 'error'));
+  };
+
   const openEdit = (id) => {
     loadCoupons();
     fetch('/api/cms/packages/' + id, { headers: getCmsHeaders() })
@@ -215,13 +238,22 @@ export default function PackagesContent() {
                       )}
                     </td>
                     <td className="border-b border-gray-200 px-3 py-2 md:px-4 md:py-3">
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300"
-                        onClick={() => openEdit(p.id)}
-                      >
-                        แก้ไข
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300"
+                          onClick={() => openEdit(p.id)}
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                          onClick={() => deletePackage(p.id, p.name)}
+                        >
+                          ลบ
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

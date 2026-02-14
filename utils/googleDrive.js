@@ -221,6 +221,99 @@ async function deleteFile(fileId) {
     await drive.files.delete({ fileId, supportsAllDrives: true });
 }
 
+/**
+ * ลิสต์ไฟล์ในโฟลเดอร์ (รองรับ pagination)
+ * @param {string} parentFolderId - ID โฟลเดอร์
+ * @returns {Promise<Array<{ id: string, name: string }>>}
+ */
+async function listFilesInFolder(parentFolderId) {
+    if (!parentFolderId) return [];
+    const drive = getDrive();
+    const all = [];
+    let pageToken = null;
+    do {
+        const res = await drive.files.list({
+            q: `'${parentFolderId}' in parents and trashed=false`,
+            fields: 'nextPageToken, files(id, name)',
+            pageSize: 100,
+            pageToken: pageToken || undefined,
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true
+        });
+        const files = res.data.files || [];
+        all.push(...files.map((f) => ({ id: f.id, name: f.name })));
+        pageToken = res.data.nextPageToken || null;
+    } while (pageToken);
+    return all;
+}
+
+/**
+ * หาโฟลเดอร์ย่อยตาม user_id (ไม่สร้างถ้าไม่มี)
+ * @param {string} parentFolderId - ID โฟลเดอร์หลัก
+ * @param {string|number} userId - ชื่อโฟลเดอร์ (user_id)
+ * @returns {Promise<string|null>} folder ID หรือ null
+ */
+async function getUserFolderId(parentFolderId, userId) {
+    const drive = getDrive();
+    const folderName = String(userId);
+    const listRes = await drive.files.list({
+        q: `'${parentFolderId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'files(id,name)',
+        pageSize: 1,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true
+    });
+    if (listRes.data.files && listRes.data.files.length > 0) {
+        return listRes.data.files[0].id;
+    }
+    return null;
+}
+
+/**
+ * ลบโฟลเดอร์ของ user บน Drive (โฟลเดอร์ย่อยชื่อ user_id ใต้โฟลเดอร์หลัก)
+ * ลบไฟล์ทั้งหมดในโฟลเดอร์ก่อน แล้วค่อยลบโฟลเดอร์
+ */
+async function deleteUserFolderOnDrive(parentFolderId, userId) {
+    const userFolderId = await getUserFolderId(parentFolderId, userId);
+    if (!userFolderId) return;
+    const drive = getDrive();
+    const files = await listFilesInFolder(userFolderId);
+    for (const f of files) {
+        try {
+            await drive.files.delete({ fileId: f.id, supportsAllDrives: true });
+        } catch (e) {
+            console.error('Delete user Drive file:', f.id, e && e.message ? e.message : '');
+        }
+    }
+    try {
+        await drive.files.delete({ fileId: userFolderId, supportsAllDrives: true });
+    } catch (e) {
+        console.error('Delete user Drive folder:', userFolderId, e && e.message ? e.message : '');
+    }
+}
+
+/**
+ * ลบข้อมูล Drive ของ user (โฟลเดอร์รูป + โฟลเดอร์ JSON ตาม user_id)
+ */
+async function deleteUserDriveData(userId) {
+    const imagesFolderId = process.env.GOOGLE_DRIVE_IMAGES_FOLDER_ID;
+    const jsonFolderId = process.env.GOOGLE_DRIVE_JSON_FOLDER_ID;
+    if (imagesFolderId) {
+        try {
+            await deleteUserFolderOnDrive(imagesFolderId, userId);
+        } catch (e) {
+            console.error('Delete user Drive images folder:', e && e.message ? e.message : '');
+        }
+    }
+    if (jsonFolderId) {
+        try {
+            await deleteUserFolderOnDrive(jsonFolderId, userId);
+        } catch (e) {
+            console.error('Delete user Drive json folder:', e && e.message ? e.message : '');
+        }
+    }
+}
+
 function isDriveEnabled() {
     return process.env.USE_GOOGLE_DRIVE === 'true' || process.env.USE_GOOGLE_DRIVE === '1';
 }
@@ -236,6 +329,7 @@ module.exports = {
     getFileContent,
     getImageBuffer,
     deleteFile,
+    deleteUserDriveData,
     isDriveEnabled,
     transformDriveUrl,
     transformDriveUrlsInString

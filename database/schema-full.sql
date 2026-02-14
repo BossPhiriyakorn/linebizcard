@@ -152,6 +152,8 @@ ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS custom_expires_at TIMESTAMP;
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS created_by_admin_id INTEGER;
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_image_file_id VARCHAR(100);
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_json_file_id VARCHAR(100);
+COMMENT ON COLUMN user_cards.drive_image_file_id IS 'Google Drive file ID ของรูป (เมื่อ USE_GOOGLE_DRIVE=true) ใช้สำหรับลบเมื่อลบการ์ด';
+COMMENT ON COLUMN user_cards.drive_json_file_id IS 'Google Drive file ID ของไฟล์ JSON การ์ด ใช้สำหรับดึงเนื้อหาและลบเมื่อลบการ์ด';
 
 ALTER TABLE memberships ADD COLUMN IF NOT EXISTS package_id INTEGER;
 DO $$
@@ -440,6 +442,8 @@ ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_account_name TEXT;
 ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS qr_payment_qr_image_url TEXT;
 ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS privacy_policy_content TEXT;
 ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS terms_of_service_content TEXT;
+ALTER TABLE cms_settings ADD COLUMN IF NOT EXISTS contact_design_url TEXT;
+COMMENT ON COLUMN cms_settings.contact_design_url IS 'ลิงค์ช่องทางติดต่อออกแบบ — แสดงเมื่อลูกค้ากดปุ่มติดต่อออกแบบบนหน้าสร้างการ์ด';
 
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS original_amount DECIMAL(10,2);
 ALTER TABLE pending_payments ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
@@ -480,6 +484,18 @@ INSERT INTO admins (username, email, password) VALUES
     '$2b$10$K0SGysDWlKaF6oG7kLYfCuVw77t/Ng/nb9i8g.pBHWu6xjmql9v3.'
 )
 ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, password = EXCLUDED.password;
+
+-- -----------------------------------------------------------------------------
+-- Template การ์ด "ออกแบบเอง" (สำหรับฟีเจอร์ออกแบบการ์ดจาก Flex Simulator)
+-- is_active = false เพื่อไม่ให้โผล่ในรายการเลือกเทมเพลต
+-- -----------------------------------------------------------------------------
+INSERT INTO templates (name, description, template_json, is_active)
+SELECT
+  'ออกแบบเอง',
+  'การ์ดที่ผู้ใช้ออกแบบเองจาก Flex Simulator',
+  '{"tectony1":[{"linemsg":"ออกแบบเอง"},{"type":"bubble","body":{"type":"box","layout":"vertical","contents":[{"type":"text","text":""}]}}]}',
+  false
+WHERE NOT EXISTS (SELECT 1 FROM templates WHERE name = 'ออกแบบเอง');
 
 -- -----------------------------------------------------------------------------
 -- PII / OTP: ประเภทคอลัมน์สำหรับการเข้ารหัส (สร้างครั้งเดียวหรืออัปเกรดจาก schema เก่า)

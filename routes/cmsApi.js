@@ -50,6 +50,7 @@ router.patch('/templates/:id/toggle', authenticateCmsToken, requireAdmin, cmsCon
 router.delete('/templates/:id', authenticateCmsToken, requireAdmin, cmsController.deleteTemplate);
 
 router.patch('/users/:id/active', authenticateCmsToken, requireAdmin, requireAdminPermission('can_manage_users'), cmsController.setUserActive);
+router.delete('/users/:id', authenticateCmsToken, requireAdmin, requireAdminPermission('can_manage_users'), cmsController.deleteUser);
 router.patch('/users/:id/membership', authenticateCmsToken, requireAdmin, requireAdminPermission('can_manage_users'), cmsController.updateUserMembership);
 
 // แพ็กเกจ (สร้าง/แก้ไข)
@@ -57,6 +58,7 @@ router.get('/packages', authenticateCmsToken, requireAdmin, cmsController.getPac
 router.get('/packages/:id', authenticateCmsToken, requireAdmin, cmsController.getPackageById);
 router.post('/packages', authenticateCmsToken, requireAdmin, cmsController.createPackage);
 router.put('/packages/:id', authenticateCmsToken, requireAdmin, cmsController.updatePackage);
+router.delete('/packages/:id', authenticateCmsToken, requireAdmin, cmsController.deletePackage);
 
 // คูปอง
 router.get('/coupons', authenticateCmsToken, requireAdmin, cmsController.getCoupons);

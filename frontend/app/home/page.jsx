@@ -112,6 +112,20 @@ function HomeContent() {
     ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.username || 'ผู้ใช้'
     : '';
 
+  const deleteCard = (cardId) => {
+    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบการ์ดนี้?')) return;
+    fetch('/api/cards/' + cardId, { method: 'DELETE', headers: getHeaders() })
+      .then((r) => (handleAuthResponse(r) ? null : r.json()))
+      .then((data) => {
+        if (data == null) return;
+        if (data.success) {
+          setCards((prev) => prev.filter((c) => c.id !== cardId));
+          setAlert({ show: true, msg: 'ลบการ์ดแล้ว', type: 'success' });
+        } else setAlert({ show: true, msg: data.message || 'ลบไม่สำเร็จ', type: 'error' });
+      })
+      .catch(() => setAlert({ show: true, msg: 'เกิดข้อผิดพลาด', type: 'error' }));
+  };
+
   const copyLink = (url) => {
     navigator.clipboard.writeText(url).then(() => setAlert({ show: true, msg: 'คัดลอกลิงค์แล้ว!', type: 'success' }));
     setTimeout(() => setAlert((a) => ({ ...a, show: false })), 2000);
@@ -250,10 +264,20 @@ function HomeContent() {
                   </Link>
                 </div>
               ) : (
-                <div className="flex min-w-0 flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-[#1DB446] hover:shadow-md">
+                <div
+                  className={`flex min-w-0 flex-col rounded-xl border bg-white p-4 shadow-sm transition-all hover:shadow-md ${
+                    latestCard.template_name === 'ออกแบบเอง'
+                      ? 'border-violet-200 hover:border-violet-400 ring-1 ring-violet-100'
+                      : 'border-gray-200 hover:border-[#1DB446]'
+                  }`}
+                >
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <h4 className="min-w-0 truncate font-medium text-gray-800">{latestCard.user_name || 'ไม่ระบุชื่อ'}</h4>
-                    <span className="shrink-0 rounded-full bg-[#1DB446] px-2.5 py-0.5 text-xs font-medium text-white">
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium text-white ${
+                        latestCard.template_name === 'ออกแบบเอง' ? 'bg-violet-600' : 'bg-[#1DB446]'
+                      }`}
+                    >
                       {latestCard.template_name || 'Template'}
                     </span>
                   </div>
@@ -298,12 +322,22 @@ function HomeContent() {
                       </>
                     ) : (
                       <>
-                        <Link
-                          href={'/edit-card/' + latestCard.id}
-                          className="flex-1 min-w-[70px] rounded-lg bg-[#1DB446] px-3 py-2 text-center text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
-                        >
-                          แก้ไข
-                        </Link>
+                        {latestCard.template_name === 'ออกแบบเอง' ? (
+                          <button
+                            type="button"
+                            className="flex-1 min-w-[70px] rounded-lg bg-red-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-red-700"
+                            onClick={() => deleteCard(latestCard.id)}
+                          >
+                            ลบ
+                          </button>
+                        ) : (
+                          <Link
+                            href={'/edit-card/' + latestCard.id}
+                            className="flex-1 min-w-[70px] rounded-lg bg-[#1DB446] px-3 py-2 text-center text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                          >
+                            แก้ไข
+                          </Link>
+                        )}
                         <button
                           type="button"
                           className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"

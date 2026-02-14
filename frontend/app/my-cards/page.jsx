@@ -53,6 +53,7 @@ function MyCardsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const [cardFilter, setCardFilter] = useState('template'); // 'template' | 'custom' — เริ่มต้นแสดงการ์ดจากเทมเพลต
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'success' });
   const [checkingMembership, setCheckingMembership] = useState(true);
   const [membershipOk, setMembershipOk] = useState(false);
@@ -135,10 +136,14 @@ function MyCardsContent() {
     mutate();
   }, [searchParams, mutate]);
 
+  const cardsByType =
+    cardFilter === 'custom'
+      ? cards.filter((c) => c.template_name === 'ออกแบบเอง')
+      : cards.filter((c) => c.template_name !== 'ออกแบบเอง');
   const filtered =
     search.trim() === ''
-      ? cards
-      : cards.filter(
+      ? cardsByType
+      : cardsByType.filter(
           (c) =>
             (c.user_name && c.user_name.toLowerCase().includes(search.toLowerCase())) ||
             (c.user_phone && c.user_phone.includes(search)) ||
@@ -203,6 +208,30 @@ function MyCardsContent() {
             {alert.msg}
           </div>
         )}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setCardFilter('template')}
+            className={`min-h-[44px] rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
+              cardFilter === 'template'
+                ? 'bg-[#1DB446] text-white shadow-sm'
+                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-[#1DB446] hover:text-[#1DB446]'
+            }`}
+          >
+            เทมเพลต
+          </button>
+          <button
+            type="button"
+            onClick={() => setCardFilter('custom')}
+            className={`min-h-[44px] rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
+              cardFilter === 'custom'
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-violet-500 hover:text-violet-600'
+            }`}
+          >
+            ออกแบบเอง
+          </button>
+        </div>
         <div className="mb-4">
           <input
             type="text"
@@ -246,23 +275,42 @@ function MyCardsContent() {
         {!isLoading && !error && filtered.length === 0 && (
           <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
             <div className="py-14 text-center text-gray-500">
-              <h3 className="mb-2.5 text-xl font-semibold text-gray-700">ยังไม่มีการ์ด</h3>
-              <p className="mb-4">เริ่มสร้างการ์ดแรกของคุณเลย!</p>
+              <h3 className="mb-2.5 text-xl font-semibold text-gray-700">
+                {cardFilter === 'custom' ? 'ยังไม่มีการ์ดออกแบบเอง' : 'ยังไม่มีการ์ดจากเทมเพลต'}
+              </h3>
+              <p className="mb-4">
+                {cardFilter === 'custom' ? 'ไปออกแบบการ์ดเองได้ที่หน้าออกแบบการ์ดเอง' : 'เริ่มสร้างการ์ดแรกของคุณเลย!'}
+              </p>
               <Link
-                href="/create"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white no-underline transition-all hover:bg-[#0FA03A] hover:-translate-y-0.5 hover:shadow-lg"
+                href={cardFilter === 'custom' ? '/create-custom' : '/create'}
+                className={`inline-flex min-h-[44px] items-center justify-center rounded-lg px-5 py-3 font-semibold text-white no-underline transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                  cardFilter === 'custom' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-[#1DB446] hover:bg-[#0FA03A]'
+                }`}
               >
-                สร้างการ์ดใหม่
+                {cardFilter === 'custom' ? 'ออกแบบการ์ดเอง' : 'สร้างการ์ดใหม่'}
               </Link>
             </div>
           </div>
         )}
         {!isLoading && !error && filtered.length > 0 &&
-          filtered.map((card) => (
-            <div key={card.id} className="min-w-0 rounded-xl border border-black/5 bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:border-[#1DB446] hover:shadow-md md:p-6">
+          filtered.map((card) => {
+            const isCustomCard = card.template_name === 'ออกแบบเอง';
+            return (
+            <div
+              key={card.id}
+              className={`min-w-0 rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md md:p-6 ${
+                isCustomCard
+                  ? 'border-violet-200 hover:border-violet-400 ring-1 ring-violet-100'
+                  : 'border-black/5 hover:border-[#1DB446]'
+              }`}
+            >
               <div className="mb-4 flex justify-between items-start gap-2">
                 <h3 className="text-gray-800 text-lg font-medium">{card.user_name || 'ไม่ระบุชื่อ'}</h3>
-                <span className="shrink-0 rounded-full bg-[#1DB446] px-3 py-1 text-xs font-medium text-white">
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium text-white ${
+                    isCustomCard ? 'bg-violet-600' : 'bg-[#1DB446]'
+                  }`}
+                >
                   {card.template_name || 'Template'}
                 </span>
               </div>
@@ -290,12 +338,23 @@ function MyCardsContent() {
                 />
               </div>
               <div className="flex flex-wrap gap-2.5">
-                <Link
-                  href={'/edit-card/' + card.id}
-                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
-                >
-                  แก้ไข
-                </Link>
+                {!isCustomCard && (
+                  <Link
+                    href={'/edit-card/' + card.id}
+                    className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                  >
+                    แก้ไข
+                  </Link>
+                )}
+                {isCustomCard && (
+                  <button
+                    type="button"
+                    className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                    onClick={() => deleteCard(card.id)}
+                  >
+                    ลบ
+                  </button>
+                )}
                 <button
                   type="button"
                   className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-4 py-2.5 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
@@ -310,16 +369,19 @@ function MyCardsContent() {
                 >
                   แชร์ใน LINE
                 </button>
-                <button
-                  type="button"
-                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-                  onClick={() => deleteCard(card.id)}
-                >
-                  ลบ
-                </button>
+                {!isCustomCard && (
+                  <button
+                    type="button"
+                    className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                    onClick={() => deleteCard(card.id)}
+                  >
+                    ลบ
+                  </button>
+                )}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
     </div>

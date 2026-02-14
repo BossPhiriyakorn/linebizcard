@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Cropper from 'react-easy-crop';
@@ -34,6 +35,7 @@ function CreateContent() {
   const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
   const [createdSuccess, setCreatedSuccess] = useState(false);
   const [compressThresholdMB, setCompressThresholdMB] = useState(2); // ค่า default จนกว่าจะดึงจาก API
+  const [contactDesignUrl, setContactDesignUrl] = useState(null); // ลิงค์ติดต่อออกแบบจาก CMS (ปุ่มติดต่อออกแบบ)
   const [checkingMembership, setCheckingMembership] = useState(true);
 
   // ครอปรูปก่อนอัปโหลด — มีไฟล์เดียว: เลือกครอปหรือใช้รูปเต็ม แล้ว compress แล้วส่งไปสร้างการ์ด
@@ -83,8 +85,9 @@ function CreateContent() {
         fetch('/api/config')
           .then((r) => r.json())
           .then((configData) => {
-            if (configData.success && configData.data && configData.data.compressThresholdMB) {
-              setCompressThresholdMB(configData.data.compressThresholdMB);
+            if (configData.success && configData.data) {
+              if (configData.data.compressThresholdMB) setCompressThresholdMB(configData.data.compressThresholdMB);
+              if (configData.data.contactDesignUrl) setContactDesignUrl(configData.data.contactDesignUrl);
             }
           })
           .catch(() => {});
@@ -680,6 +683,28 @@ function CreateContent() {
 
         {!createdSuccess && step === 1 && (
         <div>
+          <div className="mb-6 grid grid-cols-2 gap-3">
+            <Link
+              href="/create-custom"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[#1DB446] bg-[#1DB446] px-3 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#0FA03A] hover:shadow-md whitespace-nowrap"
+            >
+              <span>🎨</span> ออกแบบการ์ดเอง
+            </Link>
+            {contactDesignUrl ? (
+              <a
+                href={contactDesignUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-[#1DB446] hover:bg-gray-50 hover:text-[#1DB446] whitespace-nowrap"
+              >
+                <span>📩</span> ติดต่อออกแบบ
+              </a>
+            ) : (
+              <span className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-400 whitespace-nowrap cursor-not-allowed" title="แอดมินยังไม่ได้ตั้งค่าลิงค์ติดต่อใน CMS">
+                <span>📩</span> ติดต่อออกแบบ
+              </span>
+            )}
+          </div>
           <h2 className={`${sectionTitleClass} mb-2`}>
             <span className={numberBadge}>1</span> เลือก Template
           </h2>
@@ -709,9 +734,11 @@ function CreateContent() {
                   {displayImage && <img src={displayImage} alt={t.name} className="mb-2.5 h-[150px] w-full rounded-lg object-cover" />}
                   <h3 className="mb-1 text-gray-800 text-lg font-medium">{t.name}</h3>
                   <p className="mb-3 text-sm text-gray-500">{t.description || '-'}</p>
-                  <span className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white">
-                    เลือกและกรอกข้อมูล
-                  </span>
+                  <div className="flex justify-center">
+                    <span className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white">
+                      เลือกและกรอกข้อมูล
+                    </span>
+                  </div>
                 </div>
               );
             })}

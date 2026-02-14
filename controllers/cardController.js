@@ -769,8 +769,243 @@ async function serveCardJson(res, row) {
     }
 }
 
+/**
+ * Traverse Flex JSON และแทนที่ string ที่เป็น "{liff_url}" ด้วยลิงก์แชร์จริง
+ * @param {Object} obj - วัตถุ Flex (อาจเป็น box, button, bubble, carousel)
+ * @param {string} liffUrl - ลิงก์แชร์การ์ด (liff_url)
+ */
+function replaceLiffUrlPlaceholder(obj, liffUrl) {
+    if (!obj || typeof obj !== 'object') return;
+    if (!liffUrl || typeof liffUrl !== 'string') return;
+    const keys = Object.keys(obj);
+    for (const key of keys) {
+        const val = obj[key];
+        if (typeof val === 'string' && val === '{liff_url}') {
+            obj[key] = liffUrl;
+        } else if (Array.isArray(val)) {
+            val.forEach((item) => replaceLiffUrlPlaceholder(item, liffUrl));
+        } else if (val && typeof val === 'object') {
+            replaceLiffUrlPlaceholder(val, liffUrl);
+        }
+    }
+}
+
+/**
+ * Traverse Flex JSON และแทนที่ uri ของปุ่มโทร/เมลด้วยค่าจากโปรไฟล์
+ * @param {Object} obj - วัตถุ Flex (อาจเป็น box, button, bubble, carousel)
+ * @param {Object} opts - { buttonType: 'tel'|'mail'|'none', phone: string, email: string }
+ */
+function injectProfileIntoFlexJson(obj, opts) {
+    if (!obj || typeof obj !== 'object') return;
+    if (obj.action && obj.action.type === 'uri' && typeof obj.action.uri === 'string') {
+        const uri = obj.action.uri;
+        const phone = (opts.phone || '').trim();
+        const email = (opts.email || '').trim();
+        if (opts.injectPhone && (uri === 'tel:{phone}' || uri.toLowerCase().startsWith('tel:'))) {
+            obj.action.uri = 'tel:' + phone;
+        } else if (opts.injectEmail && (uri === 'mailto:{email}' || uri.toLowerCase().startsWith('mailto:'))) {
+            obj.action.uri = 'mailto:' + email;
+        }
+    }
+    const keys = ['contents', 'body', 'footer', 'header', 'hero'];
+    for (const key of keys) {
+        const child = obj[key];
+        if (Array.isArray(child)) {
+            child.forEach((c) => injectProfileIntoFlexJson(c, opts));
+        } else if (child && typeof child === 'object') {
+            injectProfileIntoFlexJson(child, opts);
+        }
+    }
+}
+
+/**
+ * ตรวจว่าใน JSON string มี placeholder ตามประเภทปุ่มที่เลือกหรือไม่
+ * คืนค่า { valid: true } หรือ { valid: false, missing: ['label1', 'label2'] }
+ */
+function validateRequiredPlaceholders(rawJson, buttonType) {
+    if (!buttonType || buttonType === 'none') return { valid: true };
+    const checks = [
+        { need: ['share', 'share_tel', 'share_mail', 'all'].includes(buttonType), search: '{liff_url}', label: '{liff_url} (ปุ่มแชร์)' },
+        { need: ['tel', 'share_tel', 'tel_mail', 'all'].includes(buttonType), search: 'tel:{phone}', label: 'tel:{phone} (ปุ่มโทร)' },
+        { need: ['mail', 'tel_mail', 'share_mail', 'all'].includes(buttonType), search: 'mailto:{email}', label: 'mailto:{email} (ปุ่มเมล)' }
+    ];
+    const missing = [];
+    for (const { need, search, label } of checks) {
+        if (need && rawJson.indexOf(search) === -1) missing.push(label);
+    }
+    if (missing.length === 0) return { valid: true };
+    return { valid: false, missing };
+}
+
+/**
+ * สร้างการ์ดออกแบบเอง (รับ JSON จาก Flex Simulator + หัวนามบัตร + ปุ่มโทร/เมล)
+ */
+async function createCustomCard(req, res) {
+    let jsonWrittenPath = null;
+    try {
+        const userId = parseInt(req.user.id, 10);
+        if (isNaN(userId)) {
+            return res.status(401).json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่' });
+        }
+        const { card_title, flex_json, button_type } = req.body || {};
+        const title = (card_title != null && String(card_title).trim()) ? String(card_title).trim() : 'นามบัตรของ';
+        const rawJson = (flex_json != null && typeof flex_json === 'string') ? flex_json.trim() : '';
+        const validButtonTypes = ['none', 'share', 'tel', 'mail', 'share_tel', 'tel_mail', 'share_mail', 'all'];
+        const btnType = validButtonTypes.includes(String(button_type)) ? String(button_type) : 'none';
+        const injectPhone = ['tel', 'share_tel', 'tel_mail', 'all'].includes(btnType);
+        const injectEmail = ['mail', 'tel_mail', 'share_mail', 'all'].includes(btnType);
+        if (!rawJson) {
+            return res.status(400).json({ success: false, message: 'กรุณาวางโค้ด JSON จาก Flex Simulator' });
+        }
+        const placeholderCheck = validateRequiredPlaceholders(rawJson, btnType);
+        if (!placeholderCheck.valid) {
+            const missingList = placeholderCheck.missing.join(', ');
+            return res.status(400).json({
+                success: false,
+                message: `สร้างการ์ดไม่สำเร็จ — ไม่พบ syntax ใน JSON: กรุณาใส่ ${missingList} ในปุ่ม Type Uri ตามประเภทปุ่มที่เลือก`
+            });
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(rawJson);
+        } catch (e) {
+            return res.status(400).json({ success: false, message: 'รูปแบบ JSON ไม่ถูกต้อง' });
+        }
+        if (JSON.stringify(parsed).length > 500000) {
+            return res.status(400).json({ success: false, message: 'ขนาด JSON เกินกำหนด' });
+        }
+        const customTemplateResult = await pool.query(
+            "SELECT id FROM templates WHERE name = 'ออกแบบเอง' LIMIT 1"
+        );
+        if (customTemplateResult.rows.length === 0) {
+            return res.status(500).json({ success: false, message: 'ระบบยังไม่ได้ตั้งค่า template ออกแบบเอง' });
+        }
+        const customTemplateId = customTemplateResult.rows[0].id;
+        let userProfile = { first_name: '', last_name: '', phone: '', email: '' };
+        try {
+            const profileRow = await pool.query(
+                'SELECT first_name, last_name, nickname, phone, email FROM users WHERE id = $1',
+                [userId]
+            );
+            const row = profileRow.rows[0] || {};
+            userProfile = {
+                first_name: decryptIfEncrypted(row.first_name),
+                last_name: decryptIfEncrypted(row.last_name),
+                phone: decryptIfEncrypted(row.phone),
+                email: row.email || ''
+            };
+        } catch (e) {
+            // ใช้ค่าว่าง
+        }
+        const fullName = `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim() || 'ผู้ใช้';
+        let contentsForShare = parsed;
+        let isTectony1 = false;
+        if (parsed && parsed.tectony1 && Array.isArray(parsed.tectony1) && parsed.tectony1.length >= 2) {
+            isTectony1 = true;
+            contentsForShare = parsed.tectony1[1];
+        } else if (parsed && (parsed.type === 'bubble' || parsed.type === 'carousel')) {
+            contentsForShare = parsed;
+        } else {
+            return res.status(400).json({ success: false, message: 'JSON ต้องเป็น bubble, carousel หรือรูปแบบ tectony1' });
+        }
+        if (contentsForShare.type !== 'bubble' && contentsForShare.type !== 'carousel') {
+            return res.status(400).json({ success: false, message: 'เนื้อหาการ์ดต้องเป็น bubble หรือ carousel' });
+        }
+        const opts = {
+            injectPhone,
+            injectEmail,
+            phone: userProfile.phone || '',
+            email: userProfile.email || ''
+        };
+        injectProfileIntoFlexJson(contentsForShare, opts);
+        const uniqueId = generateUniqueId();
+        const liffUrl = `https://liff.line.me/${process.env.LIFF_ID || ''}?name=${uniqueId}&id=1`;
+        replaceLiffUrlPlaceholder(contentsForShare, liffUrl);
+        const altText = (title || 'นามบัตรของ').slice(0, 400);
+        const flexMessageJson = createFlexMessageJson(contentsForShare, altText);
+        let expiresAt = null;
+        try {
+            const membershipResult = await pool.query(
+                `SELECT end_date FROM memberships 
+                 WHERE user_id = $1 AND status = 'active' AND end_date > CURRENT_TIMESTAMP 
+                 ORDER BY end_date DESC LIMIT 1`,
+                [userId]
+            );
+            if (membershipResult.rows.length > 0 && membershipResult.rows[0].end_date) {
+                expiresAt = membershipResult.rows[0].end_date;
+            } else {
+                expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            }
+        } catch (e) {
+            expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        }
+        const jsonFileName = getJsonFileName(uniqueId);
+        const jsonFilePath = path.join(jsonDir, jsonFileName);
+        let driveJsonFileId = null;
+        if (isDriveEnabled()) {
+            const { fileId } = await uploadJson(userId, flexMessageJson, jsonFileName);
+            driveJsonFileId = fileId;
+        } else {
+            await fs.writeJson(jsonFilePath, flexMessageJson, { spaces: 2 });
+            jsonWrittenPath = jsonFilePath;
+        }
+        await pool.query(
+            `INSERT INTO user_cards 
+            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type, drive_image_file_id, drive_json_file_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+            [
+                uniqueId,
+                userId,
+                customTemplateId,
+                jsonFileName,
+                encrypt(fullName),
+                encrypt(userProfile.phone || null),
+                encrypt(userProfile.email || null),
+                null,
+                null,
+                JSON.stringify(flexMessageJson),
+                liffUrl,
+                expiresAt,
+                'normal',
+                null,
+                driveJsonFileId
+            ]
+        );
+        const cardResult = await pool.query(
+            'SELECT id, unique_id, liff_url, json_file_name, created_at, expires_at FROM user_cards WHERE unique_id = $1',
+            [uniqueId]
+        );
+        const card = cardResult.rows[0];
+        if (jsonWrittenPath) jsonWrittenPath = null;
+        if (res.headersSent) return;
+        res.status(201).json({
+            success: true,
+            message: 'สร้างการ์ดออกแบบเองสำเร็จ',
+            data: {
+                id: card.id,
+                unique_id: card.unique_id,
+                liff_url: card.liff_url,
+                json_file_name: card.json_file_name,
+                created_at: card.created_at,
+                expires_at: card.expires_at
+            }
+        });
+    } catch (error) {
+        if (jsonWrittenPath) {
+            fs.remove(jsonWrittenPath).catch(() => {});
+        }
+        console.error('[create-custom-card] error:', error.message);
+        if (res.headersSent) return;
+        res.status(500).json({
+            success: false,
+            message: 'เกิดข้อผิดพลาดในการสร้างการ์ด: ' + (error.message || 'ลบไม่สำเร็จ')
+        });
+    }
+}
+
 module.exports = {
     createCard,
+    createCustomCard,
     getMyCards,
     getCardById,
     getCardJson,

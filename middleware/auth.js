@@ -159,7 +159,7 @@ function generateCmsToken(admin) {
     return jwt.sign(
         { id: admin.id, username: admin.username, email: admin.email },
         secret,
-        { expiresIn: '7d' }
+        { expiresIn: '24h' }
     );
 }
 
