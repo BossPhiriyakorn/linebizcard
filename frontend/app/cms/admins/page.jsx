@@ -193,7 +193,7 @@ export default function AdminsPage() {
           <span>รายการแอดมิน</span>
           <button
             type="button"
-            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-800"
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#c9a962] px-3 py-1.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
             onClick={openAdd}
           >
             + สร้างแอดมิน
@@ -278,7 +278,7 @@ export default function AdminsPage() {
               <div className="mb-4">
                 <label className="mb-1.5 block font-medium text-gray-800">ชื่อผู้ใช้ *</label>
                 <input
-                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
                   placeholder="เช่น admin2"
                   value={form.username}
                   onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
@@ -287,7 +287,7 @@ export default function AdminsPage() {
               <div className="mb-4">
                 <label className="mb-1.5 block font-medium text-gray-800">ชื่อจริงนามสกุล</label>
                 <input
-                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
                   placeholder="เช่น สมชาย ใจดี"
                   value={form.full_name}
                   onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
@@ -296,7 +296,7 @@ export default function AdminsPage() {
               <div className="mb-4">
                 <label className="mb-1.5 block font-medium text-gray-800">ชื่อเล่นแอดมิน</label>
                 <input
-                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
                   placeholder="เช่น แอดมินบอส"
                   value={form.nickname}
                   onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))}
@@ -308,7 +308,7 @@ export default function AdminsPage() {
                     <label className="mb-1.5 block font-medium text-gray-800">อีเมล *</label>
                     <input
                       type="email"
-                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
                       placeholder="admin2@magicbizcard.local"
                       value={form.email}
                       onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
@@ -318,7 +318,7 @@ export default function AdminsPage() {
                     <label className="mb-1.5 block font-medium text-gray-800">รหัสผ่าน * (อย่างน้อย 6 ตัวอักษร)</label>
                     <input
                       type="password"
-                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                      className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
                       placeholder="••••••••"
                       value={form.password}
                       onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
@@ -337,7 +337,7 @@ export default function AdminsPage() {
                         type="checkbox"
                         checked={form.is_active === true}
                         onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-violet-700 focus:ring-violet-700"
+                        className="h-4 w-4 rounded border-gray-300 text-[#b8960c] focus:ring-[#c9a962]"
                       />
                       <span className="text-sm font-medium text-gray-800">สถานะใช้งาน</span>
                     </label>
@@ -354,7 +354,7 @@ export default function AdminsPage() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                  className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                   onClick={save}
                 >
                   {editingId ? 'บันทึก' : 'สร้างแอดมิน'}

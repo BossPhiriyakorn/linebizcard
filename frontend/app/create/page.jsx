@@ -5,14 +5,15 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Cropper from 'react-easy-crop';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
 
 const inputClass =
-  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
+  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/15';
 const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
 const sectionTitleClass =
-  'mb-3 flex items-center gap-2.5 border-b-2 border-[#1DB446] pb-2.5 text-lg font-bold text-[#1DB446]';
-const numberBadge = 'inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#1DB446] text-sm font-bold text-white';
+  'mb-3 flex items-center gap-2.5 border-b-2 border-[#c9a962] pb-2.5 text-lg font-bold text-[#c9a962]';
+const numberBadge = 'inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#c9a962] text-sm font-bold text-[#0c1222]';
 
 // ตรวจสอบว่ามีแพ็กเกจหรือไม่จาก profile — ใช้ package_name เป็นตัวบ่งชี้
 function checkMembershipExpiredFromProfile(profile) {
@@ -31,6 +32,7 @@ function CreateContent() {
   const [image1, setImage1] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState(''); // ข้อความแสดงขั้นตอน
   const [createdSuccess, setCreatedSuccess] = useState(false);
@@ -129,7 +131,6 @@ function CreateContent() {
 
   const showAlertMsg = (msg, type) => {
     setAlert({ show: true, msg, type });
-    setTimeout(() => setAlert((p) => ({ ...p, show: false })), 5000);
   };
 
   // ส่ง log จาก frontend ไปแสดงใน pm2 logs บนเซิร์ฟเวอร์
@@ -286,6 +287,7 @@ function CreateContent() {
   const handleUseFullImage = useCallback(() => {
     if (!originalFileForCrop) return;
     setImage1(originalFileForCrop);
+    setFieldErrors((p) => ({ ...p, image: '' }));
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(originalFileForCrop);
@@ -299,6 +301,7 @@ function CreateContent() {
     try {
       const croppedFile = await getCroppedImage(imageToCrop, croppedAreaPixels);
       setImage1(croppedFile);
+      setFieldErrors((p) => ({ ...p, image: '' }));
       setImagePreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(croppedFile);
@@ -362,6 +365,7 @@ function CreateContent() {
     // HEIC บrowser วาดไม่ได้ — ไม่เปิดครอป ใช้รูปเต็มเลย
     if (isHeic) {
       setImage1(file);
+      setFieldErrors((p) => ({ ...p, image: '' }));
       setImagePreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(file);
@@ -387,29 +391,20 @@ function CreateContent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedTemplate || !form.name?.trim()) {
-      showAlertMsg('กรุณากรอกชื่อ', 'error');
+    const err = {};
+    if (!form.name?.trim()) err.name = 'กรุณากรอกชื่อ';
+    if (!form.phone?.trim()) err.phone = 'กรุณากรอกเบอร์โทรศัพท์';
+    else if (form.phone.length !== 10) err.phone = 'เบอร์โทรศัพท์ต้อง 10 หลัก';
+    if (!form.email?.trim()) err.email = 'กรุณากรอกอีเมล';
+    if (!image1) err.image = 'กรุณาอัปโหลดรูปภาพ';
+    setFieldErrors(err);
+    if (Object.keys(err).length > 0) {
+      showAlertMsg('กรุณากรอกข้อมูลให้ครบถ้วน', 'error');
       return;
     }
-    if (!form.phone?.trim()) {
-      showAlertMsg('กรุณากรอกเบอร์โทรศัพท์', 'error');
-      return;
-    }
-    if (form.phone.length !== 10) {
-      showAlertMsg('เบอร์โทรศัพท์ต้อง 10 หลัก', 'error');
-      return;
-    }
-    if (!form.email?.trim()) {
-      showAlertMsg('กรุณากรอกอีเมล', 'error');
-      return;
-    }
-    if (!image1) {
-      showAlertMsg('กรุณาอัปโหลดรูปภาพ', 'error');
-      return;
-    }
-    
     setLoading(true);
     setAlert({ show: false, msg: '', type: 'error' });
+    setFieldErrors({});
     
     // ขั้นตอนที่ 1: ลดขนาดรูปทุกรูป ไม่มีขั้นต่ำ (ทุกแบบ ทุกแพลตฟอร์ม) — ยกเว้น HEIC ให้ server จัดการ
     let processedImage = image1;
@@ -545,7 +540,7 @@ function CreateContent() {
         <CustomerAppBar />
         <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
           <div className="flex flex-col items-center justify-center py-16">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962]" />
             <p className="mt-3 text-gray-500">กำลังตรวจสอบสิทธิ์...</p>
           </div>
         </div>
@@ -573,7 +568,7 @@ function CreateContent() {
               onCropChange={setCrop}
               onZoomChange={setZoom}
               onCropComplete={onCropComplete}
-              style={{ containerStyle: { background: '#000' }, cropAreaStyle: { border: '2px solid #1DB446' } }}
+              style={{ containerStyle: { background: '#000' }, cropAreaStyle: { border: '2px solid #c9a962' } }}
             />
           </div>
           <div className="flex flex-col gap-3 border-t border-gray-700 bg-gray-900/95 px-4 py-4 safe-area-pb">
@@ -591,7 +586,7 @@ function CreateContent() {
                   onClick={() => setCropAspect(value)}
                   className={`min-h-[36px] rounded-lg px-3 py-1.5 text-sm font-medium ${
                     cropAspect === value
-                      ? 'bg-[#1DB446] text-white'
+                      ? 'bg-[#c9a962] text-[#0c1222]'
                       : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
                 >
@@ -608,7 +603,7 @@ function CreateContent() {
               step={0.1}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
-              className="w-24 accent-[#1DB446]"
+              className="w-24 accent-[#c9a962]"
             />
             <button
               type="button"
@@ -628,7 +623,7 @@ function CreateContent() {
               type="button"
               onClick={handleConfirmCrop}
               disabled={cropConfirming}
-              className="min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-2.5 font-semibold text-white hover:bg-[#0FA03A] disabled:opacity-50"
+              className="min-h-[44px] rounded-lg bg-[#c9a962] px-5 py-2.5 font-semibold text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-50"
             >
               {cropConfirming ? 'กำลังตัดรูป...' : 'ยืนยันครอป'}
             </button>
@@ -640,15 +635,18 @@ function CreateContent() {
       {/* ก้อนเดียว: หัวข้อ + แจ้งเตือน + เนื้อหาขั้นตอน */}
       <div className="rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-8">
         <div className="mb-4 border-b-2 border-gray-100 pb-4">
-          <h2 className="text-lg font-bold text-gray-800 md:text-xl">สร้างการ์ด</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 md:text-xl">
+            <img src="/assets/icons/new.png" alt="" className="h-7 w-7 object-contain" />
+            สร้างการ์ด
+          </h2>
         </div>
-        {alert.show && (
-          <div
-            className={`mb-5 rounded-lg px-4 py-3 ${alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'}`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((p) => ({ ...p, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
 
         {createdSuccess && (
           <div className="rounded-xl border-2 border-green-200 bg-green-50 p-6 text-center md:p-8">
@@ -658,7 +656,7 @@ function CreateContent() {
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
               <a
                 href="/my-cards"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-6 py-3 font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#c9a962] px-6 py-3 font-semibold text-[#0c1222] no-underline hover:bg-[#b8960c]"
               >
                 ไปการ์ดของฉัน
               </a>
@@ -673,7 +671,7 @@ function CreateContent() {
                   if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
                   setImagePreviewUrl(null);
                 }}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-6 py-3 font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-6 py-3 font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
               >
                 สร้างการ์ดอีก
               </button>
@@ -686,7 +684,7 @@ function CreateContent() {
           <div className="mb-6 grid grid-cols-2 gap-3">
             <Link
               href="/create-custom"
-              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[#1DB446] bg-[#1DB446] px-3 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#0FA03A] hover:shadow-md whitespace-nowrap"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-[#c9a962] bg-[#c9a962] px-3 py-3 text-sm font-semibold text-[#0c1222] shadow-sm transition-all hover:bg-[#b8960c] hover:shadow-md whitespace-nowrap"
             >
               <span>🎨</span> ออกแบบการ์ดเอง
             </Link>
@@ -695,7 +693,7 @@ function CreateContent() {
                 href={contactDesignUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-[#1DB446] hover:bg-gray-50 hover:text-[#1DB446] whitespace-nowrap"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border-2 border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-[#c9a962] hover:bg-gray-50 hover:text-[#c9a962] whitespace-nowrap"
               >
                 <span>📩</span> ติดต่อออกแบบ
               </a>
@@ -725,7 +723,7 @@ function CreateContent() {
               return (
                 <div
                   key={t.id}
-                  className="relative cursor-pointer overflow-hidden rounded-2xl border-2 border-gray-200 bg-white p-5 transition-all hover:-translate-y-2 hover:border-[#1DB446] hover:shadow-lg hover:shadow-[#1DB446]/20 before:absolute before:left-0 before:top-0 before:h-1 before:w-full before:scale-x-100 before:bg-gradient-to-r before:from-[#1DB446] before:to-[#00C300]"
+                  className="relative cursor-pointer overflow-hidden rounded-2xl border-2 border-gray-200 bg-white p-5 transition-all hover:-translate-y-2 hover:border-[#c9a962] hover:shadow-lg hover:shadow-[#c9a962]/20 before:absolute before:left-0 before:top-0 before:h-1 before:w-full before:scale-x-100 before:bg-gradient-to-r before:from-[#c9a962] before:to-[#b8960c]"
                   onClick={() => handleSelectTemplate(t)}
                   role="button"
                   tabIndex={0}
@@ -735,7 +733,7 @@ function CreateContent() {
                   <h3 className="mb-1 text-gray-800 text-lg font-medium">{t.name}</h3>
                   <p className="mb-3 text-sm text-gray-500">{t.description || '-'}</p>
                   <div className="flex justify-center">
-                    <span className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white">
+                    <span className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#c9a962] px-4 py-2.5 text-sm font-semibold text-[#0c1222]">
                       เลือกและกรอกข้อมูล
                     </span>
                   </div>
@@ -752,7 +750,7 @@ function CreateContent() {
           <p className="mb-4 text-[0.95rem] text-gray-500">กรอกข้อมูลด้านล่างเพื่อสร้างการ์ด</p>
           <button
             type="button"
-            className="mb-6 inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-4 py-2.5 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+            className="mb-6 inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-4 py-2.5 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
             onClick={handleBackToTemplates}
           >
             ← เปลี่ยน template
@@ -787,24 +785,25 @@ function CreateContent() {
 
           <div className="w-full">
             <form onSubmit={handleSubmit}>
-              <div className="mb-6 rounded-xl border-2 border-gray-200 bg-gray-50 p-4 transition-colors hover:border-[#1DB446] md:p-5">
+              <div className="mb-6 rounded-xl border-2 border-gray-200 bg-gray-50 p-4 transition-colors hover:border-[#c9a962] md:p-5">
                 <h3 className={sectionTitleClass}>
                   <span className={numberBadge}>1</span> การ์ดข้อมูลติดต่อ
                 </h3>
                 <div className="mb-5">
-                  <label htmlFor="create-name" className={labelClass}>ชื่อ *</label>
+                  <label htmlFor="create-name" className={labelClass}>ชื่อ <span className="text-red-600" aria-hidden="true">*</span></label>
                   <input
                     id="create-name"
                     type="text"
                     required
                     placeholder="กรอกชื่อ-นามสกุล"
                     value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); setFieldErrors((p) => ({ ...p, name: '' })); }}
                     className={inputClass}
                   />
+                  {fieldErrors.name && <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>}
                 </div>
                 <div className="mb-5">
-                  <label htmlFor="create-phone" className={labelClass}>Tel. *</label>
+                  <label htmlFor="create-phone" className={labelClass}>Tel. <span className="text-red-600" aria-hidden="true">*</span></label>
                   <input
                     id="create-phone"
                     type="tel"
@@ -813,22 +812,24 @@ function CreateContent() {
                     maxLength={10}
                     inputMode="numeric"
                     value={form.phone}
-                    onChange={handlePhoneChange}
+                    onChange={(e) => { handlePhoneChange(e); setFieldErrors((p) => ({ ...p, phone: '' })); }}
                     className={inputClass}
                   />
                   <small className="mt-1 block text-sm italic text-gray-500">ต้องกรอก 10 หลัก</small>
+                  {fieldErrors.phone && <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>}
                 </div>
                 <div className="mb-5">
-                  <label htmlFor="create-email" className={labelClass}>Email *</label>
+                  <label htmlFor="create-email" className={labelClass}>Email <span className="text-red-600" aria-hidden="true">*</span></label>
                   <input
                     id="create-email"
                     type="email"
                     required
                     placeholder="อีเมล"
                     value={form.email}
-                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    onChange={(e) => { setForm((f) => ({ ...f, email: e.target.value })); setFieldErrors((p) => ({ ...p, email: '' })); }}
                     className={inputClass}
                   />
+                  {fieldErrors.email && <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>}
                 </div>
                 <div className="mb-5">
                   <label htmlFor="create-desc" className={labelClass}>รายละเอียด</label>
@@ -848,13 +849,13 @@ function CreateContent() {
                   <span className={numberBadge}>📷</span> รูปภาพ
                 </h3>
                 <div className="mb-5">
-                  <label htmlFor="create-image1" className={labelClass}>อัพโหลดรูปภาพ *</label>
+                  <label htmlFor="create-image1" className={labelClass}>อัพโหลดรูปภาพ <span className="text-red-600" aria-hidden="true">*</span></label>
                   <input
                     id="create-image1"
                     type="file"
                     accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif"
                     onChange={handleImageChange}
-                    className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1DB446] file:px-4 file:py-2 file:font-semibold file:text-white"
+                    className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-[#c9a962] file:px-4 file:py-2 file:font-semibold file:text-[#0c1222]"
                   />
                   <small className="mt-1 block text-sm italic text-gray-500">เลือกรูปแล้วจะเปิดหน้าครอป — ปรับกรอบสี่เหลี่ยมได้อิสระ หรือกด &quot;ใช้รูปเต็ม&quot; แล้วยืนยัน ระบบจะใช้ไฟล์เดียว (ครอปหรือเต็ม) แปลงและเก็บเพื่อสร้างการ์ด</small>
                   {imagePreviewUrl && (
@@ -862,12 +863,13 @@ function CreateContent() {
                       <img src={imagePreviewUrl} alt="Preview" className="mx-auto max-h-[200px] max-w-full rounded-lg object-cover shadow" />
                     </div>
                   )}
+                  {fieldErrors.image && <p className="mt-1 text-sm text-red-600">{fieldErrors.image}</p>}
                 </div>
               </div>
 
               {loading ? (
                 <div className="flex flex-col items-center justify-center gap-3 rounded-xl bg-gray-50 border-2 border-gray-200 py-8 px-4">
-                  <svg className="animate-spin h-8 w-8 text-[#1DB446]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-8 w-8 text-[#c9a962]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -877,14 +879,14 @@ function CreateContent() {
                 <div className="flex gap-2.5">
                   <button
                     type="button"
-                    className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-5 py-3 font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-5 py-3 font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                     onClick={handleBackToTemplates}
                   >
                     ย้อนกลับ
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 min-h-[44px] rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    className="flex-1 min-h-[44px] rounded-lg bg-[#c9a962] px-5 py-3 font-semibold text-[#0c1222] hover:bg-[#b8960c] disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={!form.name?.trim() || form.phone.length !== 10 || !form.email?.trim() || !image1}
                   >
                     สร้างการ์ด
@@ -907,7 +909,10 @@ export default function CreatePage() {
         <div className="mx-auto w-full max-w-[1200px]">
           <CustomerAppBar />
           <div className="mb-4 rounded-xl bg-white px-4 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.1)] md:px-8">
-            <h2 className="text-lg font-semibold text-gray-800 md:text-xl">สร้างการ์ด</h2>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 md:text-xl">
+              <img src="/assets/icons/new.png" alt="" className="h-7 w-7 object-contain" />
+              สร้างการ์ด
+            </h2>
           </div>
           <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
             <p className="text-gray-500">กำลังโหลด...</p>

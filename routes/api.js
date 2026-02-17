@@ -12,6 +12,7 @@ const { uploadSingle, uploadMultiple, uploadSlip, handleUploadError } = require(
 const { rateLimitCreateCard, rateLimitPayment, rateLimitPaymentChannels } = require('../middleware/rateLimit');
 const pool = require('../config/database');
 const { decryptIfEncrypted } = require('../utils/encryption');
+const { expireOverdueMemberships } = require('../services/membershipService');
 
 // Health check: ตรวจสอบการเชื่อมต่อ API และฐานข้อมูล
 router.get('/health', async (req, res) => {
@@ -257,8 +258,11 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
             [userId]
         );
 
-        // สมาชิกภาพ (แพ็กเกจ) — ดึง membership ล่าสุด (รวมหมดอายุ) เพื่อแสดงวันสมัคร/หมดอายุ
-        // แต่ถ้าหมดอายุแล้ว → package_name = null (ใช้เป็นตัวบ่งชี้ว่า "ไม่มีแพ็กเกจ")
+        // อัปเดต DB: สมาชิกที่เวลาหมดแล้ว → เป็นไม่มีแพ็กเกจ (status = expired, package_id = NULL) โยงกับ requireActiveMembership
+        await expireOverdueMemberships(pool);
+
+        // สมาชิกภาพ (แพ็กเกจ) — ดึง membership ล่าสุด (รวมหมดอายุ/expired) เพื่อแสดงวันสมัคร/หมดอายุ
+        // ถ้าหมดอายุหรือ status = expired → package_name = null (ไม่มีแพ็กเกจ → สร้าง/แชร์การ์ดไม่ได้)
         let membership = null;
         let remainingDays = null;
         try {
@@ -268,7 +272,7 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
                  (m.end_date > CURRENT_TIMESTAMP AND m.status = 'active') AS is_active
                  FROM memberships m 
                  LEFT JOIN packages p ON p.id = m.package_id 
-                 WHERE m.user_id = $1 AND m.status = 'active'
+                 WHERE m.user_id = $1
                  ORDER BY m.end_date DESC LIMIT 1`,
                 [userId]
             );
@@ -280,7 +284,6 @@ router.get('/user/profile', authenticateToken, requireActiveUser, async (req, re
                     start_date: row.start_date,
                     end_date: row.end_date,
                     status: row.status,
-                    // ถ้าหมดอายุแล้ว → package_name = null (ใช้เป็นตัวบ่งชี้ว่า "ยังไม่ได้สมัครแพ็กเกจ")
                     package_name: row.is_active ? (row.package_name || row.membership_type) : null,
                     remaining_days: remainingDays
                 };

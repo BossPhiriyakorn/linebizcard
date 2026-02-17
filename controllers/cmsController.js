@@ -5,6 +5,7 @@ const { generateCmsToken } = require('../middleware/auth');
 const { addCmsNotification } = require('../utils/cmsNotification');
 const { convertToWebp } = require('../utils/imageToWebp');
 const { encrypt, decryptIfEncrypted } = require('../utils/encryption');
+const { expireOverdueMemberships } = require('../services/membershipService');
 
 /**
  * CMS Login: อีเมล + รหัสผ่าน — ตรวจจากตาราง admins
@@ -78,7 +79,7 @@ async function cmsLogin(req, res) {
 }
 
 /**
- * Dashboard: users_count, templates_count, cards_count, notifications_count (จำนวนการเข้าใช้งานล่าสุด 7 วัน)
+ * Dashboard: users_count, templates_count, cards_count, notifications_count (แจ้งเตือนใหม่ = เฉพาะวันนี้ตามเวลา Asia/Bangkok)
  */
 async function getDashboard(req, res) {
     try {
@@ -87,7 +88,9 @@ async function getDashboard(req, res) {
             'SELECT COUNT(*) AS c FROM templates WHERE COALESCE(is_active, true) = true'
         );
         const cardsResult = await pool.query('SELECT COUNT(*) AS c FROM user_cards');
-        const notificationsResult = await pool.query('SELECT COUNT(*) AS c FROM cms_notifications');
+        const notificationsResult = await pool.query(
+            'SELECT COUNT(*) AS c FROM cms_notifications WHERE (created_at AT TIME ZONE \'Asia/Bangkok\')::date = (NOW() AT TIME ZONE \'Asia/Bangkok\')::date'
+        );
         res.json({
             success: true,
             data: {
@@ -430,6 +433,9 @@ async function getUserById(req, res) {
             phone: decryptIfEncrypted(rawUser.phone),
             nickname: decryptIfEncrypted(rawUser.nickname)
         };
+
+        // อัปเดต DB: สมาชิกที่เวลาหมดแล้ว → ไม่มีแพ็กเกจ (status = expired, package_id = NULL)
+        await expireOverdueMemberships(pool);
 
         let membership = null;
         try {

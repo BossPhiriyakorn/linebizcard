@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { getCmsHeaders, handleCmsResponse } from './cmsApi';
-import Link from 'next/link';
-
 const cardConfig = [
-  { key: 'templates_count', label: 'จำนวนแทมเพลต', icon: '📄' },
-  { key: 'users_count', label: 'จำนวนผู้ใช้งาน', icon: '👥' },
-  { key: 'cards_count', label: 'จำนวนการ์ดที่สร้าง', icon: '🃏' },
-  { key: 'notifications_count', label: 'จำนวนการแจ้งเตือน', icon: '🔔' },
+  { key: 'templates_count', label: 'จำนวนแทมเพลต', icon: 'flash-card.png' },
+  { key: 'users_count', label: 'จำนวนผู้ใช้งาน', icon: 'team.png' },
+  { key: 'cards_count', label: 'จำนวนการ์ดที่สร้าง', icon: 'id-card.png' },
+  { key: 'notifications_count', label: 'แจ้งเตือนใหม่', icon: 'bell.png' },
 ];
 
 const glassCard = {
@@ -19,17 +17,20 @@ const glassCard = {
 };
 
 function StatCard({ icon, value, label }) {
+  const isImg = typeof icon === 'string' && icon.endsWith('.png');
   return (
     <div
       className="relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md md:p-6"
       style={glassCard}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-2xl">
-          {icon}
-        </span>
+      <div className="mb-3 flex items-center justify-center h-11 w-11">
+        {isImg ? (
+          <img src={`/assets/icons/${icon}`} alt="" className="h-8 w-8 object-contain" />
+        ) : (
+          <span className="text-2xl">{icon}</span>
+        )}
       </div>
-      <div className="text-2xl font-bold text-violet-700 md:text-3xl">
+      <div className="text-2xl font-bold text-[#b8960c] md:text-3xl">
         {value}
       </div>
       <div className="mt-1 text-sm text-slate-500">{label}</div>
@@ -93,7 +94,7 @@ function CalendarCard() {
           >
             {cell ? (
               <span
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${cell.isToday ? 'bg-violet-600 text-white ring-2 ring-violet-400 ring-offset-1' : ''}`}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${cell.isToday ? 'bg-[#c9a962] text-[#0c1222] ring-2 ring-[#c9a962]/50 ring-offset-1' : ''}`}
               >
                 {cell.day}
               </span>
@@ -162,25 +163,15 @@ function NotificationsCard() {
           <ul className="space-y-2">
             {list.map((n) => (
               <li key={n.id} className="rounded-xl border border-slate-100 bg-white/60 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <span className="inline-block rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-700">
-                      {typeLabel(n.notification_type)}
-                    </span>
-                    <p className="mt-1 text-sm font-medium text-gray-800">{n.title}</p>
-                    {n.message && <p className="mt-0.5 text-xs text-slate-600 line-clamp-2">{n.message}</p>}
-                    <p className="mt-1 text-xs text-slate-400">
-                      {n.created_at ? new Date(n.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}
-                    </p>
-                  </div>
-                  {n.link_url && (
-                    <Link
-                      href={n.link_url}
-                      className="shrink-0 text-xs font-medium text-violet-600 no-underline hover:underline"
-                    >
-                      ดู
-                    </Link>
-                  )}
+                <div className="min-w-0 flex-1">
+                  <span className="inline-block rounded bg-[#c9a962]/15 px-1.5 py-0.5 text-xs font-medium text-[#b8960c]">
+                    {typeLabel(n.notification_type)}
+                  </span>
+                  <p className="mt-1 text-sm font-medium text-gray-800">{n.title}</p>
+                  {n.message && <p className="mt-0.5 text-xs text-slate-600 line-clamp-2">{n.message}</p>}
+                  <p className="mt-1 text-xs text-slate-400">
+                    {n.created_at ? new Date(n.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                  </p>
                 </div>
               </li>
             ))}

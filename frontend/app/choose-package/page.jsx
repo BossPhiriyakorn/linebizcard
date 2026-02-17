@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders as getAuthHeaders, handleAuthResponse } from '../utils/auth';
 
 export default function ChoosePackagePage() {
@@ -93,18 +94,16 @@ export default function ChoosePackagePage() {
       <CustomerAppBar />
       <div className="my-6 rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-8" style={{ maxWidth: 600, marginLeft: 'auto', marginRight: 'auto', width: '100%' }}>
         <div className="mb-6 text-center">
-          <h1 className="mb-2.5 text-2xl font-bold text-[#1DB446]">เลือกแพ็กเกจ</h1>
+          <h1 className="mb-2.5 text-2xl font-bold text-[#c9a962]">เลือกแพ็กเกจ</h1>
           <p className="text-gray-500">เลือกแพ็กเกจที่ต้องการเพื่อเริ่มใช้งาน</p>
         </div>
-        {alert.show && (
-          <div
-            className={`mb-5 rounded-lg px-5 py-3.5 ${
-              alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'
-            }`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((a) => ({ ...a, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
         {loading ? (
           <div className="py-12 text-center text-slate-500">กำลังโหลดแพ็กเกจ...</div>
         ) : packages.length === 0 ? (
@@ -114,15 +113,15 @@ export default function ChoosePackagePage() {
             {packages.map((pkg) => (
               <div
                 key={pkg.id}
-                className="flex flex-col rounded-xl border-2 border-gray-200 p-5 transition-all hover:border-[#1DB446] hover:shadow-md"
+                className="flex flex-col rounded-xl border-2 border-gray-200 p-5 transition-all hover:border-[#c9a962] hover:shadow-md"
               >
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-800">{pkg.name}</h3>
                   <p className="mt-1 text-sm text-gray-500">{pkg.duration_days} วันใช้งาน</p>
-                  {pkg.period_type === 'annual' && <p className="mt-1 text-xs text-violet-600">ใช้คูปองส่วนลด (ซื้อแบบรายปี) ได้</p>}
-                  {pkg.period_type === '3months' && <p className="mt-1 text-xs text-violet-600">ใช้คูปองส่วนลด (ซื้อแบบ 3 เดือน) ได้</p>}
+                  {pkg.period_type === 'annual' && <p className="mt-1 text-xs text-[#b8960c]">ใช้คูปองส่วนลด (ซื้อแบบรายปี) ได้</p>}
+                  {pkg.period_type === '3months' && <p className="mt-1 text-xs text-[#b8960c]">ใช้คูปองส่วนลด (ซื้อแบบ 3 เดือน) ได้</p>}
                   {pkg.description && <p className="mt-2 text-sm text-gray-600">{pkg.description}</p>}
-                  <p className="mt-2 text-base font-semibold text-[#1DB446]">
+                  <p className="mt-2 text-base font-semibold text-[#c9a962]">
                     {pkg.price != null && Number(pkg.price) > 0 ? `${Number(pkg.price)} บาท` : 'ฟรี'}
                   </p>
                   {(pkg.requires_payment === false || (pkg.price != null && Number(pkg.price) === 0)) && (
@@ -134,7 +133,7 @@ export default function ChoosePackagePage() {
                     type="button"
                     disabled={submittingId === pkg.id}
                     onClick={() => usePackageDirect(pkg)}
-                    className="mt-4 w-full rounded-lg bg-[#1DB446] py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:opacity-60"
+                    className="mt-4 w-full rounded-lg bg-[#c9a962] py-3 font-semibold text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-60"
                   >
                     {submittingId === pkg.id ? 'กำลังดำเนินการ...' : 'ใช้เลย'}
                   </button>
@@ -142,7 +141,7 @@ export default function ChoosePackagePage() {
                   <button
                     type="button"
                     onClick={() => goToSummary(pkg)}
-                    className="mt-4 w-full rounded-lg bg-[#1DB446] py-3 font-semibold text-white hover:bg-[#0FA03A]"
+                    className="mt-4 w-full rounded-lg bg-[#c9a962] py-3 font-semibold text-[#0c1222] hover:bg-[#b8960c]"
                   >
                     เลือก
                   </button>

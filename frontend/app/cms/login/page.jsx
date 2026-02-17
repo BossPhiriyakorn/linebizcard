@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
-const DEFAULT_BG_COLOR = '#5b21b6';
+const DEFAULT_BG_COLOR = '#0c1222';
 
 export default function CmsLoginPage() {
   const router = useRouter();
@@ -91,7 +91,7 @@ export default function CmsLoginPage() {
       </div>
       <div className="flex min-w-0 items-center justify-center overflow-x-hidden bg-slate-50 p-4 md:p-6">
         <div className="w-full max-w-[min(400px,100%)] rounded-2xl bg-white p-5 shadow-lg md:p-10">
-          <h2 className="m-0 mb-2 text-xl font-bold text-violet-700 md:text-2xl">Welcome</h2>
+          <h2 className="m-0 mb-2 text-xl font-bold text-[#b8960c] md:text-2xl">Welcome</h2>
           <p className="mb-7 text-sm text-slate-500 md:text-base">เข้าสู่ระบบหลังบ้านเพื่อดำเนินการต่อ</p>
           {alert.show && (
             <div
@@ -114,7 +114,7 @@ export default function CmsLoginPage() {
                 placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 bg-green-50/50 px-3.5 py-3 text-base transition-colors placeholder:text-slate-400 focus:border-violet-700 focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-gray-200 bg-green-50/50 px-3.5 py-3 text-base transition-colors placeholder:text-slate-400 focus:border-[#c9a962] focus:bg-white focus:outline-none"
               />
             </div>
             <div className="mb-4">
@@ -126,12 +126,12 @@ export default function CmsLoginPage() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 bg-green-50/50 px-3.5 py-3 text-base transition-colors placeholder:text-slate-400 focus:border-violet-700 focus:bg-white focus:outline-none"
+                className="w-full rounded-xl border border-gray-200 bg-green-50/50 px-3.5 py-3 text-base transition-colors placeholder:text-slate-400 focus:border-[#c9a962] focus:bg-white focus:outline-none"
               />
             </div>
             <button
               type="submit"
-              className="mt-2 w-full rounded-xl bg-violet-700 px-4 py-3.5 text-base font-semibold text-white transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+              className="mt-2 w-full rounded-xl bg-[#c9a962] px-4 py-3.5 text-base font-semibold text-[#0c1222] transition-opacity hover:bg-[#b8960c] disabled:cursor-not-allowed disabled:opacity-70"
               disabled={loading}
             >
               {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}

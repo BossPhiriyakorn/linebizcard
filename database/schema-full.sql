@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS user_cards (
     created_by_admin_id INTEGER,
     drive_image_file_id VARCHAR(100),
     drive_json_file_id VARCHAR(100),
+    card_name VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -154,6 +155,9 @@ ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_image_file_id VARCHAR(100)
 ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS drive_json_file_id VARCHAR(100);
 COMMENT ON COLUMN user_cards.drive_image_file_id IS 'Google Drive file ID ของรูป (เมื่อ USE_GOOGLE_DRIVE=true) ใช้สำหรับลบเมื่อลบการ์ด';
 COMMENT ON COLUMN user_cards.drive_json_file_id IS 'Google Drive file ID ของไฟล์ JSON การ์ด ใช้สำหรับดึงเนื้อหาและลบเมื่อลบการ์ด';
+-- การ์ดออกแบบเอง: ชื่อการ์ดและรายละเอียด (ใช้อ้างอิงในรายการ ไม่แสดงบนการ์ด)
+ALTER TABLE user_cards ADD COLUMN IF NOT EXISTS card_name VARCHAR(255);
+COMMENT ON COLUMN user_cards.card_name IS 'ชื่อการ์ดที่ผู้ใช้ตั้ง (การ์ดออกแบบเอง) ใช้อ้างอิงในรายการ';
 
 ALTER TABLE memberships ADD COLUMN IF NOT EXISTS package_id INTEGER;
 DO $$

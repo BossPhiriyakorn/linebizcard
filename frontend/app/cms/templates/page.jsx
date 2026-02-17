@@ -5,7 +5,7 @@ import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
 const formControl =
-  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20';
+  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20';
 
 const glassCard = {
   background: 'rgba(255,255,255,0.75)',
@@ -15,15 +15,20 @@ const glassCard = {
 };
 
 function StatCard({ icon, value, label }) {
+  const isImg = typeof icon === 'string' && icon.endsWith('.png');
   return (
     <div
       className="relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md md:p-6"
       style={glassCard}
     >
-      <div className="mb-3 flex items-center justify-center rounded-xl bg-violet-100 text-2xl w-11 h-11">
-        {icon}
+      <div className="mb-3 flex h-11 w-11 items-center justify-center">
+        {isImg ? (
+          <img src={`/assets/icons/${icon}`} alt="" className="h-8 w-8 object-contain" />
+        ) : (
+          <span className="text-2xl">{icon}</span>
+        )}
       </div>
-      <div className="text-2xl font-bold text-violet-700 md:text-3xl">{value}</div>
+      <div className="text-2xl font-bold text-[#b8960c] md:text-3xl">{value}</div>
       <div className="mt-1 text-sm text-slate-500">{label}</div>
     </div>
   );
@@ -214,9 +219,9 @@ export default function TemplatesPage() {
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard icon="📄" value={loading ? '-' : list.length} label="จำนวนแทมเพลตทั้งหมด" />
-        <StatCard icon="✅" value={loading ? '-' : list.filter((t) => t.is_active !== false).length} label="จำนวนแทมเพลตที่ใช้งาน" />
-        <StatCard icon="⏹" value={loading ? '-' : list.filter((t) => t.is_active === false).length} label="จำนวนแทมเพลตที่ไม่ได้ใช้งาน" />
+        <StatCard icon="flash-card.png" value={loading ? '-' : list.length} label="จำนวนแทมเพลตทั้งหมด" />
+        <StatCard icon="check.png" value={loading ? '-' : list.filter((t) => t.is_active !== false).length} label="จำนวนแทมเพลตที่ใช้งาน" />
+        <StatCard icon="prohibition.png" value={loading ? '-' : list.filter((t) => t.is_active === false).length} label="จำนวนแทมเพลตที่ไม่ได้ใช้งาน" />
       </div>
 
       <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -224,7 +229,7 @@ export default function TemplatesPage() {
           <span>รายการแทมเพลต</span>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-800"
+            className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-3 py-1.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
             onClick={openAdd}
           >
             + เพิ่มแทมเพลต
@@ -236,7 +241,7 @@ export default function TemplatesPage() {
             <button
               type="button"
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                statusFilter === 'all' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                statusFilter === 'all' ? 'bg-white text-[#b8960c] shadow-sm border border-[#c9a962]/30' : 'text-slate-600 hover:text-slate-800'
               }`}
               onClick={() => setStatusFilter('all')}
             >
@@ -245,7 +250,7 @@ export default function TemplatesPage() {
             <button
               type="button"
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                statusFilter === 'active' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                statusFilter === 'active' ? 'bg-white text-[#b8960c] shadow-sm' : 'text-slate-600 hover:text-slate-800'
               }`}
               onClick={() => setStatusFilter('active')}
             >
@@ -254,7 +259,7 @@ export default function TemplatesPage() {
             <button
               type="button"
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                statusFilter === 'inactive' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                statusFilter === 'inactive' ? 'bg-white text-[#b8960c] shadow-sm' : 'text-slate-600 hover:text-slate-800'
               }`}
               onClick={() => setStatusFilter('inactive')}
             >
@@ -282,7 +287,7 @@ export default function TemplatesPage() {
                 {list.length === 0 && (
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                    className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                     onClick={openAdd}
                   >
                     เพิ่มแทมเพลต
@@ -350,7 +355,7 @@ export default function TemplatesPage() {
                           role="switch"
                           aria-checked={t.is_active !== false}
                           title={t.is_active !== false ? 'ปิดใช้' : 'เปิดใช้'}
-                          className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
+                          className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#c9a962] focus:ring-offset-2 ${
                             t.is_active !== false ? 'bg-green-500' : 'bg-gray-400'
                           }`}
                           onClick={() => toggleActive(t.id, t.is_active !== false)}
@@ -494,7 +499,7 @@ export default function TemplatesPage() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                  className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                   onClick={save}
                 >
                   บันทึก

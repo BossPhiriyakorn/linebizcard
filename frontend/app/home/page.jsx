@@ -4,7 +4,9 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders, handleAuthResponse, clearTokenAndRedirectToLogin, isMembershipExpired } from '../utils/auth';
+import { getMembershipCountdown } from '../utils/countdown';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -20,6 +22,7 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'success' });
   const [membershipExpired, setMembershipExpired] = useState(false);
+  const [countdownText, setCountdownText] = useState(null);
 
   useEffect(() => {
     const created = searchParams.get('created') === '1';
@@ -30,15 +33,12 @@ function HomeContent() {
       setAlert({ show: true, msg: 'ยังไม่ได้สมัครแพ็กเกจ กรุณาสมัครแพ็กเกจเพื่อใช้งานการ์ด', type: 'error' });
       setMembershipExpired(true);
       window.history.replaceState({}, '', '/home');
-      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 6000);
     } else if (created) {
       setAlert({ show: true, msg: 'สร้างการ์ดสำเร็จ! คัดลอกลิงค์เพื่อแชร์ใน LINE', type: 'success' });
       window.history.replaceState({}, '', '/home');
-      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 5000);
     } else if (updated) {
       setAlert({ show: true, msg: 'แก้ไขการ์ดสำเร็จ!', type: 'success' });
       window.history.replaceState({}, '', '/home');
-      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 5000);
     }
   }, [searchParams]);
 
@@ -102,6 +102,23 @@ function HomeContent() {
       .catch(() => setLoading(false));
   }, []);
 
+  // เมื่อเหลือ 0 วันแต่เวลายังไม่หมด แสดงนับถอยหลัง
+  useEffect(() => {
+    const endDate = profile?.membership?.end_date;
+    const remaining = profile?.membership?.remaining_days;
+    if (remaining !== 0 || !endDate) {
+      setCountdownText(null);
+      return;
+    }
+    const update = () => {
+      const text = getMembershipCountdown(endDate);
+      setCountdownText(text);
+    };
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [profile?.membership?.end_date, profile?.membership?.remaining_days]);
+
   // การ์ดล่าสุด (เรียงตาม created_at ล่าสุดแล้วเอาใบแรก)
   const latestCard =
     cards.length === 0
@@ -128,7 +145,6 @@ function HomeContent() {
 
   const copyLink = (url) => {
     navigator.clipboard.writeText(url).then(() => setAlert({ show: true, msg: 'คัดลอกลิงค์แล้ว!', type: 'success' }));
-    setTimeout(() => setAlert((a) => ({ ...a, show: false })), 2000);
   };
 
   const shareLink = (url, card) => {
@@ -148,25 +164,25 @@ function HomeContent() {
 
       {/* ก้อนเดียว: คอลัมน์ซ้าย = การ์ดสรุป, คอลัมน์ขวา = การ์ดของฉัน */}
       <div className="rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-6">
-        {alert.show && (
-          <div
-            className={`mb-4 rounded-lg px-4 py-3 ${alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'}`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((a) => ({ ...a, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 md:flex-row md:gap-8">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
-            <p className="mt-3 text-gray-500 md:mt-0">กำลังโหลด...</p>
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962]" />
+            <p className="mt-3 text-[#94a3b8] md:mt-0">กำลังโหลด...</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
             {/* คอลัมน์ 1: การ์ดสรุป — รูปบนกลางขนาดใหญ่ ข้อมูลอยู่ข้างล่าง พื้นหลังเดียวกับแอป */}
             <div
               className="rounded-xl p-5 md:p-6"
-              style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+              style={{ background: 'linear-gradient(160deg, #0c1222 0%, #1a2332 50%, #0f172a 100%)', border: '1px solid rgba(201,169,98,0.2)' }}
             >
               <div className="flex flex-col items-center">
                 {/* บนกลาง: รูปโปรไฟล์ขนาดใหญ่ */}
@@ -174,17 +190,17 @@ function HomeContent() {
                   {profile?.profile_image_url ? (
                     <img src={profile.profile_image_url} alt="โปรไฟล์" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="flex h-full w-full items-center justify-center bg-white/20 text-3xl font-bold text-white md:text-4xl">
+                    <span className="flex h-full w-full items-center justify-center bg-[#c9a962]/20 text-3xl font-bold text-[#f1f5f9] md:text-4xl">
                       {displayName ? displayName.charAt(0).toUpperCase() : '?'}
                     </span>
                   )}
                 </div>
                 {/* ข้างล่าง: ชื่อ + รายละเอียด */}
-                <h2 className="mb-3 text-center text-lg font-bold text-white md:text-xl">{displayName || '-'}</h2>
+                <h2 className="mb-3 text-center text-lg font-bold text-[#f1f5f9] md:text-xl">{displayName || '-'}</h2>
                 <div className="w-full space-y-2.5 text-sm">
-                  <div className="flex justify-between gap-2 text-white/95">
-                    <span className="text-white/80">วันสมัคร</span>
-                    <span className="font-medium shrink-0">
+                  <div className="flex justify-between gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">วันสมัคร</span>
+                    <span className="font-medium shrink-0 text-[#f1f5f9]">
                       {profile?.membership?.start_date
                         ? formatDate(profile.membership.start_date)
                         : profile?.created_at
@@ -192,22 +208,29 @@ function HomeContent() {
                           : '-'}
                     </span>
                   </div>
-                  <div className="flex justify-between gap-2 text-white/95">
-                    <span className="text-white/80">วันหมดอายุ</span>
-                    <span className="font-medium shrink-0">
+                  <div className="flex justify-between gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">วันหมดอายุ</span>
+                    <span className="font-medium shrink-0 text-[#f1f5f9]">
                       {profile?.membership?.end_date ? formatDate(profile.membership.end_date) : '-'}
                     </span>
                   </div>
-                  <div className="flex justify-between gap-2 text-white/95">
-                    <span className="text-white/80">แพ็กเกจ</span>
-                    <span className="font-medium shrink-0">{profile?.membership?.package_name || '-'}</span>
+                  <div className="flex justify-between gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">จำนวนวันคงเหลือ</span>
+                    <span className="font-medium shrink-0 text-[#f1f5f9]">
+                      {profile?.membership?.remaining_days != null ? `${profile.membership.remaining_days} วัน` : '-'}
+                      {countdownText && <span className="ml-1 block text-xs text-amber-300">{countdownText}</span>}
+                    </span>
                   </div>
-                  <div className="flex justify-between gap-2 text-white/95">
-                    <span className="text-white/80">จำนวนการ์ด</span>
-                    <span className="font-bold text-[#a7f3d0] shrink-0">{cards.length} ใบ</span>
+                  <div className="flex justify-between gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">แพ็กเกจ</span>
+                    <span className="font-medium shrink-0 text-[#f1f5f9]">{profile?.membership?.package_name || '-'}</span>
                   </div>
-                  <div className="flex justify-between items-center gap-2 text-white/95">
-                    <span className="text-white/80">สถานะยืนยันตัวตน</span>
+                  <div className="flex justify-between gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">จำนวนการ์ด</span>
+                    <span className="font-bold text-[#c9a962] shrink-0">{cards.length} ใบ</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 text-[#f1f5f9]">
+                    <span className="text-[#94a3b8]">สถานะยืนยันตัวตน</span>
                     <span className="shrink-0">
                       {profile?.email_verified ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-500/90 px-2.5 py-0.5 text-xs font-medium text-white">
@@ -229,11 +252,14 @@ function HomeContent() {
             {/* คอลัมน์ 2: การ์ดของฉัน */}
             <div className="min-w-0">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-lg font-bold text-gray-800 md:text-xl">การ์ดของฉัน</h3>
+                <h3 className="flex items-center gap-2 text-lg font-bold text-gray-800 md:text-xl">
+                  <img src="/assets/icons/identification-card.png" alt="" className="h-7 w-7 object-contain" />
+                  การ์ดของฉัน
+                </h3>
                 {!membershipExpired && (
                   <Link
                     href="/my-cards"
-                    className="text-sm font-medium text-[#1DB446] no-underline hover:underline"
+                    className="text-sm font-medium text-[#c9a962] no-underline hover:underline"
                   >
                     ดูทั้งหมด
                   </Link>
@@ -258,7 +284,7 @@ function HomeContent() {
                   <p className="mb-4 text-sm text-gray-500">เริ่มสร้างการ์ดแรกของคุณเลย!</p>
                   <Link
                     href="/create"
-                    className="inline-flex items-center justify-center rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                    className="inline-flex items-center justify-center rounded-lg bg-[#c9a962] px-5 py-3 font-semibold text-[#0c1222] no-underline hover:bg-[#b8960c] hover:text-[#0c1222]"
                   >
                     สร้างการ์ดใหม่
                   </Link>
@@ -267,15 +293,15 @@ function HomeContent() {
                 <div
                   className={`flex min-w-0 flex-col rounded-xl border bg-white p-4 shadow-sm transition-all hover:shadow-md ${
                     latestCard.template_name === 'ออกแบบเอง'
-                      ? 'border-violet-200 hover:border-violet-400 ring-1 ring-violet-100'
-                      : 'border-gray-200 hover:border-[#1DB446]'
+                      ? 'border-[#c9a962]/40 hover:border-[#c9a962]/60 ring-1 ring-[#c9a962]/20'
+                      : 'border-gray-200 hover:border-[#c9a962]'
                   }`}
                 >
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <h4 className="min-w-0 truncate font-medium text-gray-800">{latestCard.user_name || 'ไม่ระบุชื่อ'}</h4>
                     <span
                       className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium text-white ${
-                        latestCard.template_name === 'ออกแบบเอง' ? 'bg-violet-600' : 'bg-[#1DB446]'
+                        latestCard.template_name === 'ออกแบบเอง' ? 'bg-[#b8960c]' : 'bg-[#c9a962]'
                       }`}
                     >
                       {latestCard.template_name || 'Template'}
@@ -306,7 +332,7 @@ function HomeContent() {
                         </button>
                         <button
                           type="button"
-                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#c9a962] px-3 py-2 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                           onClick={() => copyLink(latestCard.liff_url)}
                         >
                           คัดลอก
@@ -333,21 +359,21 @@ function HomeContent() {
                         ) : (
                           <Link
                             href={'/edit-card/' + latestCard.id}
-                            className="flex-1 min-w-[70px] rounded-lg bg-[#1DB446] px-3 py-2 text-center text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                            className="flex-1 min-w-[70px] rounded-lg bg-[#c9a962] px-3 py-2 text-center text-sm font-semibold text-[#0c1222] no-underline hover:bg-[#b8960c]"
                           >
                             แก้ไข
                           </Link>
                         )}
                         <button
                           type="button"
-                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#c9a962] px-3 py-2 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                           onClick={() => copyLink(latestCard.liff_url)}
                         >
                           คัดลอก
                         </button>
                         <button
                           type="button"
-                          className="flex-1 min-w-[70px] rounded-lg border border-[#1DB446] px-3 py-2 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                          className="flex-1 min-w-[70px] rounded-lg border border-[#c9a962] px-3 py-2 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                           onClick={() => shareLink(latestCard.liff_url, latestCard)}
                         >
                           แชร์
@@ -371,7 +397,7 @@ export default function HomePage() {
       <div className="mx-auto w-full max-w-[1200px]">
         <CustomerAppBar />
         <div className="flex flex-col items-center justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962]" />
           <p className="mt-3 text-gray-500">กำลังโหลด...</p>
         </div>
       </div>

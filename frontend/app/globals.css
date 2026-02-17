@@ -2,6 +2,13 @@
 
 @theme {
   --font-sans: 'Prompt', sans-serif;
+  /* โทนหรู ลักชู (Tectony-style): เข้ม + ทอง */
+  --color-luxury-bg-start: #0c1222;
+  --color-luxury-bg-end: #1a2332;
+  --color-luxury-accent: #c9a962;
+  --color-luxury-accent-hover: #b8960c;
+  --color-luxury-text-on-dark: #f1f5f9;
+  --color-luxury-text-muted: #94a3b8;
 }
 
 /* -----------------------------------------------------------------------------
@@ -16,18 +23,18 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Customer (default): gradient, padding, safe area */
+/* Customer (default): โทนหรู ลักชู — พื้นหลังเข้ม ตัวอักษรอ่านชัด */
 body {
   margin: 0;
   font-family: 'Prompt', sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(160deg, var(--color-luxury-bg-start) 0%, var(--color-luxury-bg-end) 50%, #0f172a 100%);
   background-attachment: fixed;
   min-height: 100vh;
   padding: clamp(10px, 4vw, 20px);
   padding-left: max(clamp(10px, 4vw, 20px), env(safe-area-inset-left));
   padding-right: max(clamp(10px, 4vw, 20px), env(safe-area-inset-right));
   padding-bottom: max(clamp(10px, 4vw, 20px), env(safe-area-inset-bottom));
-  color: #333;
+  color: var(--color-luxury-text-on-dark);
   overflow-x: hidden;
 }
 
@@ -35,7 +42,7 @@ body {
 body:has([data-cms]) {
   margin: 0 !important;
   padding: 0 !important;
-  background: #f1f5f9 !important;
+  background: linear-gradient(160deg, #f8f6f0 0%, #eee9e0 50%, #f1f5f9 100%) !important;
   color: #1e293b;
   font-size: 14px;
 }

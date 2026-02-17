@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders, handleAuthResponse, isMembershipExpired } from '../utils/auth';
 
 const MY_CARDS_KEY = '/api/my-cards';
@@ -132,7 +133,6 @@ function MyCardsContent() {
       type: 'success',
     });
     window.history.replaceState({}, '', '/my-cards');
-    setTimeout(() => setAlert((prev) => ({ ...prev, show: false })), 5000);
     mutate();
   }, [searchParams, mutate]);
 
@@ -152,7 +152,6 @@ function MyCardsContent() {
 
   const copyLink = (url) => {
     navigator.clipboard.writeText(url).then(() => setAlert({ show: true, msg: 'คัดลอกลิงค์แล้ว!', type: 'success' }));
-    setTimeout(() => setAlert((prev) => ({ ...prev, show: false })), 2000);
   };
 
   const shareLink = (url, card) => {
@@ -185,7 +184,7 @@ function MyCardsContent() {
         <CustomerAppBar />
         <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
           <div className="flex flex-col items-center justify-center py-16">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962]" />
             <p className="mt-3 text-gray-500">กำลังตรวจสอบสิทธิ์...</p>
           </div>
         </div>
@@ -199,23 +198,26 @@ function MyCardsContent() {
       {/* ก้อนเดียว: หัวข้อ + แจ้งเตือน + ค้นหา + รายการการ์ด */}
       <div className="rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-6">
         <div className="mb-4 border-b-2 border-gray-100 pb-4">
-          <h2 className="text-lg font-bold text-gray-800 md:text-xl">การ์ดของฉัน</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 md:text-xl">
+            <img src="/assets/icons/identification-card.png" alt="" className="h-7 w-7 object-contain" />
+            การ์ดของฉัน
+          </h2>
         </div>
-        {alert.show && (
-          <div
-            className={`mb-4 rounded-lg px-4 py-3 ${alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'}`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((prev) => ({ ...prev, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
         <div className="mb-4 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setCardFilter('template')}
             className={`min-h-[44px] rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
               cardFilter === 'template'
-                ? 'bg-[#1DB446] text-white shadow-sm'
-                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-[#1DB446] hover:text-[#1DB446]'
+                ? 'bg-[#c9a962] text-[#0c1222] shadow-sm'
+                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-[#c9a962] hover:text-[#c9a962]'
             }`}
           >
             เทมเพลต
@@ -225,8 +227,8 @@ function MyCardsContent() {
             onClick={() => setCardFilter('custom')}
             className={`min-h-[44px] rounded-lg px-5 py-2.5 text-sm font-semibold transition-all ${
               cardFilter === 'custom'
-                ? 'bg-violet-600 text-white shadow-sm'
-                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-violet-500 hover:text-violet-600'
+                ? 'bg-amber-700 text-white shadow-sm'
+                : 'border-2 border-gray-300 bg-white text-gray-700 hover:border-amber-600 hover:text-amber-700'
             }`}
           >
             ออกแบบเอง
@@ -238,7 +240,7 @@ function MyCardsContent() {
             placeholder="ค้นหาการ์ด (ชื่อ, เบอร์โทร, อีเมล)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full min-w-0 rounded-lg border-2 border-gray-200 px-4 py-3 text-base transition-colors focus:border-[#1DB446] focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15"
+            className="w-full min-w-0 rounded-lg border-2 border-gray-200 px-4 py-3 text-base transition-colors focus:border-[#c9a962] focus:outline-none focus:ring-4 focus:ring-[#c9a962]/15"
           />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
@@ -264,7 +266,7 @@ function MyCardsContent() {
               <p className="mb-4">{error.message || 'โหลดข้อมูลไม่สำเร็จ'}</p>
               <button
                 type="button"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white transition-all hover:bg-[#0FA03A] hover:-translate-y-0.5 hover:shadow-lg"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#c9a962] px-5 py-3 font-semibold text-[#0c1222] transition-all hover:bg-[#b8960c] hover:-translate-y-0.5 hover:shadow-lg"
                 onClick={() => mutate()}
               >
                 ลองใหม่
@@ -275,20 +277,36 @@ function MyCardsContent() {
         {!isLoading && !error && filtered.length === 0 && (
           <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
             <div className="py-14 text-center text-gray-500">
-              <h3 className="mb-2.5 text-xl font-semibold text-gray-700">
-                {cardFilter === 'custom' ? 'ยังไม่มีการ์ดออกแบบเอง' : 'ยังไม่มีการ์ดจากเทมเพลต'}
-              </h3>
-              <p className="mb-4">
-                {cardFilter === 'custom' ? 'ไปออกแบบการ์ดเองได้ที่หน้าออกแบบการ์ดเอง' : 'เริ่มสร้างการ์ดแรกของคุณเลย!'}
-              </p>
-              <Link
-                href={cardFilter === 'custom' ? '/create-custom' : '/create'}
-                className={`inline-flex min-h-[44px] items-center justify-center rounded-lg px-5 py-3 font-semibold text-white no-underline transition-all hover:-translate-y-0.5 hover:shadow-lg ${
-                  cardFilter === 'custom' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-[#1DB446] hover:bg-[#0FA03A]'
-                }`}
-              >
-                {cardFilter === 'custom' ? 'ออกแบบการ์ดเอง' : 'สร้างการ์ดใหม่'}
-              </Link>
+              {search.trim() !== '' ? (
+                <>
+                  <h3 className="mb-2.5 text-xl font-semibold text-gray-700">ไม่พบการ์ดที่ตรงกับคำค้น</h3>
+                  <p className="mb-4">ลองเปลี่ยนคำค้นหรือล้างคำค้นเพื่อดูการ์ดทั้งหมด</p>
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 transition-all hover:border-[#c9a962] hover:text-[#c9a962]"
+                  >
+                    ล้างคำค้น
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 className="mb-2.5 text-xl font-semibold text-gray-700">
+                    {cardFilter === 'custom' ? 'ยังไม่มีการ์ดออกแบบเอง' : 'ยังไม่มีการ์ดจากเทมเพลต'}
+                  </h3>
+                  <p className="mb-4">
+                    {cardFilter === 'custom' ? 'ไปออกแบบการ์ดเองได้ที่หน้าออกแบบการ์ดเอง' : 'เริ่มสร้างการ์ดแรกของคุณเลย!'}
+                  </p>
+                  <Link
+                    href={cardFilter === 'custom' ? '/create-custom' : '/create'}
+                    className={`inline-flex min-h-[44px] items-center justify-center rounded-lg px-5 py-3 font-semibold text-white no-underline transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                      cardFilter === 'custom' ? 'bg-amber-700 hover:bg-violet-700' : 'bg-[#c9a962] hover:bg-[#b8960c]'
+                    }`}
+                  >
+                    {cardFilter === 'custom' ? 'ออกแบบการ์ดเอง' : 'สร้างการ์ดใหม่'}
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -300,20 +318,29 @@ function MyCardsContent() {
               key={card.id}
               className={`min-w-0 rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md md:p-6 ${
                 isCustomCard
-                  ? 'border-violet-200 hover:border-violet-400 ring-1 ring-violet-100'
-                  : 'border-black/5 hover:border-[#1DB446]'
+                  ? 'border-amber-200 hover:border-amber-500 ring-1 ring-amber-100'
+                  : 'border-black/5 hover:border-[#c9a962]'
               }`}
             >
               <div className="mb-4 flex justify-between items-start gap-2">
-                <h3 className="text-gray-800 text-lg font-medium">{card.user_name || 'ไม่ระบุชื่อ'}</h3>
+                <h3 className="text-gray-800 text-lg font-medium">
+                  {isCustomCard
+                    ? (card.card_name || card.user_name || 'การ์ดออกแบบเอง')
+                    : (card.user_name || 'ไม่ระบุชื่อ')}
+                </h3>
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium text-white ${
-                    isCustomCard ? 'bg-violet-600' : 'bg-[#1DB446]'
+                    isCustomCard ? 'bg-amber-700' : 'bg-[#c9a962]'
                   }`}
                 >
                   {card.template_name || 'Template'}
                 </span>
               </div>
+              {isCustomCard && card.user_description && (
+                <p className="mb-3 text-sm text-gray-600 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                  {card.user_description}
+                </p>
+              )}
               {card.user_image && (
                 <div className="mb-4 w-full overflow-hidden rounded-lg bg-gray-100">
                   <img src={card.user_image} alt="Card" className="w-full rounded-lg object-contain" style={{ maxWidth: 2047, maxHeight: 2048 }} />
@@ -341,7 +368,7 @@ function MyCardsContent() {
                 {!isCustomCard && (
                   <Link
                     href={'/edit-card/' + card.id}
-                    className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                    className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg bg-[#c9a962] px-4 py-2.5 text-sm font-semibold text-[#0c1222] no-underline hover:bg-[#b8960c]"
                   >
                     แก้ไข
                   </Link>
@@ -357,14 +384,14 @@ function MyCardsContent() {
                 )}
                 <button
                   type="button"
-                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-4 py-2.5 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-4 py-2.5 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                   onClick={() => copyLink(card.liff_url)}
                 >
                   คัดลอกลิงค์
                 </button>
                 <button
                   type="button"
-                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-4 py-2.5 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                  className="inline-flex min-h-[44px] flex-1 min-w-[85px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-4 py-2.5 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                   onClick={() => shareLink(card.liff_url, card)}
                 >
                   แชร์ใน LINE
@@ -395,11 +422,14 @@ export default function MyCardsPage() {
         <div className="mx-auto w-full max-w-[1200px]">
           <CustomerAppBar />
           <div className="mb-4 rounded-xl bg-white px-4 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.1)] md:px-8">
-            <h2 className="text-lg font-semibold text-gray-800 md:text-xl">การ์ดของฉัน</h2>
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-800 md:text-xl">
+              <img src="/assets/icons/identification-card.png" alt="" className="h-7 w-7 object-contain" />
+              การ์ดของฉัน
+            </h2>
           </div>
           <div className="rounded-xl bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
             <div className="flex flex-col items-center justify-center py-8">
-              <div className="h-5 w-5 rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446] animate-spin-slow" />
+              <div className="h-5 w-5 rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962] animate-spin-slow" />
               <p className="mt-3 text-gray-500">กำลังโหลด...</p>
             </div>
           </div>

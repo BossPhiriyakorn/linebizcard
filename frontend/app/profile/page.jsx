@@ -6,13 +6,15 @@ import { useSearchParams } from 'next/navigation';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { handleAuthResponse } from '../utils/auth';
+import { getMembershipCountdown } from '../utils/countdown';
 
 const token = () => (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
 const headers = () => ({ Authorization: 'Bearer ' + token() });
 
 const inputClass =
-  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15';
+  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/20';
 const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
 
 function CardChannelForm({ fullName, setFullName, saving, onSuccess, onCancel, labelClass: lc, inputClass: ic }) {
@@ -66,7 +68,7 @@ function CardChannelForm({ fullName, setFullName, saving, onSuccess, onCancel, l
       {err && <p className="text-sm text-red-600">{err}</p>}
       <div className="flex justify-end gap-2 pt-2">
         <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onCancel}>ยกเลิก</button>
-        <button type="submit" className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#0FA03A] disabled:opacity-50" disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+        <button type="submit" className="rounded-lg bg-[#c9a962] px-4 py-2.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-50" disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
       </div>
     </form>
   );
@@ -105,6 +107,7 @@ function ProfileContent() {
   const [paymentHistory, setPaymentHistory] = useState([]);
   /** สถานะ Stripe (จาก GET /api/payment-gateway/status) — สำหรับเตรียมการแสดงฟอร์มบัตรเมื่อเชื่อมต่อแล้ว */
   const [gatewayStatus, setGatewayStatus] = useState(null);
+  const [countdownText, setCountdownText] = useState(null);
   const stripePromise = useMemo(
     () => (gatewayStatus?.publicKey ? loadStripe(gatewayStatus.publicKey) : null),
     [gatewayStatus?.publicKey]
@@ -135,6 +138,23 @@ function ProfileContent() {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  // เมื่อเหลือ 0 วันแต่เวลายังไม่หมด แสดงนับถอยหลัง (อัปเดตทุกวินาที)
+  useEffect(() => {
+    const endDate = profile?.membership?.end_date;
+    const remaining = profile?.membership?.remaining_days;
+    if (remaining !== 0 || !endDate) {
+      setCountdownText(null);
+      return;
+    }
+    const update = () => {
+      const text = getMembershipCountdown(endDate);
+      setCountdownText(text);
+    };
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [profile?.membership?.end_date, profile?.membership?.remaining_days]);
 
   const fetchPaymentChannels = (options = {}) => {
     const { replaceOnlyIfNonEmpty, isRetry } = options;
@@ -193,7 +213,6 @@ function ProfileContent() {
     if (searchParams.get('verified') === '1') {
       setAlert({ show: true, msg: 'ยืนยันตัวตนสำเร็จแล้ว', type: 'success' });
       window.history.replaceState({}, '', '/profile');
-      setTimeout(() => setAlert((a) => ({ ...a, show: false })), 5000);
     }
   }, [searchParams]);
 
@@ -342,15 +361,18 @@ function ProfileContent() {
       {/* ก้อนเดียว: แบ่งเป็น 2 คอลัมน์ (ข้อมูลสมาชิก | ข้อมูลส่วนตัว) */}
       <div className="rounded-xl bg-white p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] md:p-6">
         <div className="mb-4 border-b-2 border-gray-100 pb-4">
-          <h2 className="text-lg font-bold text-gray-800 md:text-xl">โปรไฟล์</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold text-gray-800 md:text-xl">
+            <img src="/assets/icons/user.png" alt="" className="h-7 w-7 object-contain" />
+            โปรไฟล์
+          </h2>
         </div>
-        {alert.show && (
-          <div
-            className={`mb-4 rounded-lg px-4 py-3 ${alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'}`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((a) => ({ ...a, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
           {/* คอลัมน์ 1: รูปโปรไฟล์ + ข้อมูลสมาชิก */}
           <div className="rounded-xl border-2 border-gray-100 bg-gray-50/50 p-5">
@@ -359,7 +381,7 @@ function ProfileContent() {
                 {profile?.profile_image_url ? (
                   <img src={profile.profile_image_url} alt="โปรไฟล์" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="flex h-full w-full items-center justify-center bg-[#EDE9FE] text-3xl font-bold text-[#6B46C1]">
+                  <span className="flex h-full w-full items-center justify-center bg-[#c9a962]/20 text-3xl font-bold text-[#b8960c]">
                     {displayName ? displayName.charAt(0).toUpperCase() : '?'}
                   </span>
                 )}
@@ -396,6 +418,9 @@ function ProfileContent() {
                       ? `${profile.membership.remaining_days} วัน`
                       : '-'}
                   </span>
+                  {countdownText && (
+                    <span className="text-xs font-medium text-amber-600">{countdownText}</span>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-sm text-gray-500">แพ็กเกจ</span>
@@ -418,7 +443,7 @@ function ProfileContent() {
                       <span className="text-sm font-medium text-yellow-700">ยังไม่ยืนยันตัวตน</span>
                       <Link
                         href="/verify-email"
-                        className="ml-2 inline-flex items-center rounded-lg bg-[#1DB446] px-4 py-2 text-sm font-semibold text-white no-underline hover:bg-[#0FA03A]"
+                        className="ml-2 inline-flex items-center rounded-lg bg-[#c9a962] px-4 py-2 text-sm font-semibold text-[#0c1222] no-underline hover:bg-[#b8960c]"
                       >
                         ยืนยันตัวตน
                       </Link>
@@ -436,7 +461,7 @@ function ProfileContent() {
               {!editing && (
                 <button
                   type="button"
-                  className="min-w-[80px] rounded-lg border-2 border-[#1DB446] bg-white px-4 py-2.5 text-sm font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                  className="min-w-[80px] rounded-lg border-2 border-[#c9a962] bg-white px-4 py-2.5 text-sm font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                   onClick={() => setEditing(true)}
                 >
                   แก้ไขข้อมูล
@@ -448,7 +473,7 @@ function ProfileContent() {
                 {editing ? (
                   <form onSubmit={handleSubmit}>
                     <div className="mb-5">
-                      <label className={labelClass}>ชื่อ *</label>
+                      <label className={labelClass}>ชื่อ <span className="text-red-600" aria-hidden="true">*</span></label>
                       <input
                         type="text"
                         value={form.first_name}
@@ -457,7 +482,7 @@ function ProfileContent() {
                       />
                     </div>
                     <div className="mb-5">
-                      <label className={labelClass}>นามสกุล *</label>
+                      <label className={labelClass}>นามสกุล <span className="text-red-600" aria-hidden="true">*</span></label>
                       <input
                         type="text"
                         value={form.last_name}
@@ -475,7 +500,7 @@ function ProfileContent() {
                       />
                     </div>
                     <div className="mb-5">
-                      <label className={labelClass}>เบอร์โทร</label>
+                      <label className={labelClass}>เบอร์โทร <span className="text-red-600" aria-hidden="true">*</span></label>
                       <input
                         type="tel"
                         maxLength={10}
@@ -485,7 +510,7 @@ function ProfileContent() {
                       />
                     </div>
                     <div className="mb-5">
-                      <label className={labelClass}>อีเมล</label>
+                      <label className={labelClass}>อีเมล <span className="text-red-600" aria-hidden="true">*</span></label>
                       <input
                         type="email"
                         value={form.email}
@@ -496,14 +521,14 @@ function ProfileContent() {
                     <div className="mt-4 flex gap-2.5">
                       <button
                         type="button"
-                        className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#1DB446] bg-white px-5 py-3 font-semibold text-[#1DB446] hover:bg-[#1DB446] hover:text-white"
+                        className="inline-flex min-h-[44px] items-center justify-center rounded-lg border-2 border-[#c9a962] bg-white px-5 py-3 font-semibold text-[#c9a962] hover:bg-[#c9a962] hover:text-[#0c1222]"
                         onClick={() => setEditing(false)}
                       >
                         ยกเลิก
                       </button>
                       <button
                         type="submit"
-                        className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#1DB446] px-5 py-3 font-semibold text-white hover:bg-[#0FA03A] disabled:bg-gray-400"
+                        className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-[#c9a962] px-5 py-3 font-semibold text-[#0c1222] hover:bg-[#b8960c] disabled:bg-gray-400"
                         disabled={loading}
                       >
                         {loading ? 'กำลังบันทึก...' : 'บันทึก'}
@@ -542,7 +567,7 @@ function ProfileContent() {
           <h3 className="text-lg font-bold text-gray-800">ช่องทางการชำระเงิน</h3>
           <button
             type="button"
-            className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#0FA03A]"
+            className="rounded-lg bg-[#c9a962] px-4 py-2.5 text-sm font-semibold text-[#0c1222] hover:bg-[#b8960c]"
             onClick={openAddChannel}
           >
             {paymentChannels.length >= 1 ? 'เปลี่ยนช่องทางการชำระเงิน' : '+ เพิ่มช่องทางชำระเงิน'}
@@ -783,7 +808,7 @@ function ProfileContent() {
                       </div>
                       <div className="flex justify-end gap-2 pt-2">
                         <button type="button" className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={() => { setChannelModalOpen(false); setEditingChannelId(null); }}>ยกเลิก</button>
-                        <button type="submit" className="rounded-lg bg-[#1DB446] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#0FA03A] disabled:opacity-50" disabled={savingChannel}>{savingChannel ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+                        <button type="submit" className="rounded-lg bg-[#c9a962] px-4 py-2.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-50" disabled={savingChannel}>{savingChannel ? 'กำลังบันทึก...' : 'บันทึก'}</button>
                       </div>
                     </>
                   )}
@@ -802,7 +827,7 @@ export default function ProfilePage() {
       <div className="mx-auto w-full max-w-[800px]">
         <CustomerAppBar />
         <div className="flex flex-col items-center justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#1DB446]/30 border-t-[#1DB446]" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#c9a962]/30 border-t-[#c9a962]" />
           <p className="mt-3 text-gray-500">กำลังโหลด...</p>
         </div>
       </div>

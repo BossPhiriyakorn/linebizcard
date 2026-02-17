@@ -350,7 +350,7 @@ async function getMyCards(req, res) {
         const result = await pool.query(
             `SELECT 
                 id, unique_id, json_file_name, template_id, user_name, user_phone, user_email, user_description,
-                user_image, liff_url, created_at, updated_at, expires_at, card_type,
+                user_image, liff_url, created_at, updated_at, expires_at, card_type, card_name,
                 (SELECT name FROM templates WHERE id = user_cards.template_id) as template_name
             FROM user_cards 
             WHERE user_id = $1 
@@ -847,8 +847,10 @@ async function createCustomCard(req, res) {
         if (isNaN(userId)) {
             return res.status(401).json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่' });
         }
-        const { card_title, flex_json, button_type } = req.body || {};
+        const { card_title, flex_json, button_type, card_name, card_description } = req.body || {};
         const title = (card_title != null && String(card_title).trim()) ? String(card_title).trim() : 'นามบัตรของ';
+        const nameForCard = (card_name != null && String(card_name).trim()) ? String(card_name).trim().slice(0, 255) : null;
+        const descForCard = (card_description != null && String(card_description).trim()) ? String(card_description).trim() : null;
         const rawJson = (flex_json != null && typeof flex_json === 'string') ? flex_json.trim() : '';
         const validButtonTypes = ['none', 'share', 'tel', 'mail', 'share_tel', 'tel_mail', 'share_mail', 'all'];
         const btnType = validButtonTypes.includes(String(button_type)) ? String(button_type) : 'none';
@@ -951,8 +953,8 @@ async function createCustomCard(req, res) {
         }
         await pool.query(
             `INSERT INTO user_cards 
-            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type, drive_image_file_id, drive_json_file_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+            (unique_id, user_id, template_id, json_file_name, user_name, user_phone, user_email, user_image, user_description, flex_message_json, liff_url, expires_at, card_type, drive_image_file_id, drive_json_file_id, card_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             [
                 uniqueId,
                 userId,
@@ -962,13 +964,14 @@ async function createCustomCard(req, res) {
                 encrypt(userProfile.phone || null),
                 encrypt(userProfile.email || null),
                 null,
-                null,
+                descForCard ? encrypt(descForCard) : null,
                 JSON.stringify(flexMessageJson),
                 liffUrl,
                 expiresAt,
                 'normal',
                 null,
-                driveJsonFileId
+                driveJsonFileId,
+                nameForCard
             ]
         );
         const cardResult = await pool.query(

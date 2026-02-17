@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 function PaymentSummaryContent() {
@@ -170,10 +171,8 @@ function PaymentSummaryContent() {
       <div className="min-h-screen">
         <CustomerAppBar />
         <div className="mx-auto max-w-md p-6">
-          {alert.show && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">{alert.msg}</div>
-          )}
-          <Link href="/choose-package" className="text-[#1DB446] hover:underline">← กลับไปเลือกแพ็กเกจ</Link>
+          <AlertBanner show={alert.show} msg={alert.msg} type={alert.type} onClose={() => setAlert((a) => ({ ...a, show: false }))} autoCloseMs={0} />
+          <Link href="/choose-package" className="text-[#c9a962] hover:underline">← กลับไปเลือกแพ็กเกจ</Link>
         </div>
       </div>
     );
@@ -196,15 +195,13 @@ function PaymentSummaryContent() {
         <h1 className="mb-2 text-xl font-bold text-white">สรุปการชำระเงิน</h1>
         <p className="mb-6 text-white">ตรวจสอบราคาและส่วนลดก่อนไปหน้าคิวอาร์โอนเงิน</p>
 
-        {alert.show && (
-          <div
-            className={`mb-5 rounded-lg px-4 py-3 ${
-              alert.type === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-green-200 bg-green-50 text-green-800'
-            }`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((a) => ({ ...a, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 5000 : 0}
+        />
 
         <div className="mb-6 rounded-xl border-2 border-gray-200 bg-gray-50 p-5">
           <h2 className="mb-3 font-semibold text-gray-800">แพ็กเกจที่เลือก</h2>
@@ -221,7 +218,7 @@ function PaymentSummaryContent() {
             </div>
             <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold text-gray-800">
               <span>ราคาจริงที่ต้องจ่าย</span>
-              <span className="text-[#1DB446]">{price > 0 ? `${finalAmount.toLocaleString()} บาท` : 'ฟรี'}</span>
+              <span className="text-[#c9a962]">{price > 0 ? `${finalAmount.toLocaleString()} บาท` : 'ฟรี'}</span>
             </div>
           </div>
         </div>
@@ -234,13 +231,13 @@ function PaymentSummaryContent() {
               placeholder="กรอกรหัสคูปอง"
               value={couponCode}
               onChange={(e) => { setCouponCode(e.target.value); setCouponResult(null); }}
-              className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-2.5 focus:border-[#1DB446] focus:outline-none"
+              className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-2.5 focus:border-[#c9a962] focus:outline-none"
             />
             <button
               type="button"
               disabled={validatingCoupon || !couponCode.trim()}
               onClick={handleValidateCoupon}
-              className="rounded-lg bg-violet-600 px-4 py-2.5 font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+              className="rounded-lg bg-amber-700 px-4 py-2.5 font-medium text-white hover:bg-amber-800 disabled:opacity-50"
             >
               {validatingCoupon ? 'กำลังตรวจสอบ...' : 'ยืนยัน'}
             </button>
@@ -254,7 +251,7 @@ function PaymentSummaryContent() {
               type="button"
               disabled={submitting}
               onClick={handlePayWithCard}
-              className="w-full rounded-lg bg-violet-600 py-3.5 font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+              className="w-full rounded-lg bg-amber-700 py-3.5 font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
             >
               {submitting ? 'กำลังดำเนินการ...' : 'ชำระด้วยบัตรที่ลงทะเบียน'}
             </button>
@@ -263,7 +260,7 @@ function PaymentSummaryContent() {
             type="button"
             disabled={submitting}
             onClick={handleNext}
-            className="w-full rounded-lg bg-[#1DB446] py-3.5 font-semibold text-white hover:bg-[#0FA03A] disabled:opacity-50"
+            className="w-full rounded-lg bg-[#c9a962] py-3.5 font-semibold text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-50"
           >
             {submitting ? 'กำลังดำเนินการ...' : 'ถัดไป — ไปหน้าคิวอาร์และแนบสลิป'}
           </button>

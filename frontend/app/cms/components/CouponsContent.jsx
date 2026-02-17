@@ -5,7 +5,7 @@ import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
 const formControl =
-  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20';
+  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20';
 
 function formatDate(val) {
   if (!val) return '-';
@@ -203,7 +203,7 @@ export default function CouponsContent() {
           <span>รายการคูปอง</span>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-800"
+            className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-3 py-1.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
             onClick={openAdd}
           >
             + สร้างคูปอง
@@ -217,7 +217,7 @@ export default function CouponsContent() {
               <p className="m-0 mb-4">ยังไม่มีคูปอง</p>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                 onClick={openAdd}
               >
                 สร้างคูปอง
@@ -288,7 +288,7 @@ export default function CouponsContent() {
                   {!editingId && (
                     <button
                       type="button"
-                      className="shrink-0 rounded-md border border-violet-600 bg-white px-3 py-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-50"
+                      className="shrink-0 rounded-md border border-[#c9a962] bg-white px-3 py-2.5 text-sm font-medium text-[#b8960c] transition-colors hover:bg-[#c9a962]/10"
                       onClick={() => setForm((f) => ({ ...f, code: generateCouponCode(12) }))}
                     >
                       สุ่มรหัส
@@ -343,7 +343,7 @@ export default function CouponsContent() {
               </div>
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" className="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300" onClick={() => setModalOpen(false)}>ยกเลิก</button>
-                <button type="button" className="rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800" onClick={save}>บันทึก</button>
+                <button type="button" className="rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]" onClick={save}>บันทึก</button>
               </div>
             </div>
           </div>

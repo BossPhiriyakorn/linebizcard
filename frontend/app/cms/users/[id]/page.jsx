@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getCmsHeaders, handleCmsResponse } from '../../cmsApi';
+import { getMembershipCountdown } from '../../../utils/countdown';
 
 export default function UserDetailPage() {
   const params = useParams();
@@ -21,6 +22,7 @@ export default function UserDetailPage() {
   const [savingMembership, setSavingMembership] = useState(false);
   const [copiedCardId, setCopiedCardId] = useState(null);
   const [deletingUser, setDeletingUser] = useState(false);
+  const [countdownText, setCountdownText] = useState(null);
 
   const loadDetail = () => {
     if (!id) return;
@@ -52,6 +54,20 @@ export default function UserDetailPage() {
   useEffect(() => {
     loadDetail();
   }, [id]);
+
+  useEffect(() => {
+    const m = data.membership;
+    const endDate = m?.end_date;
+    const remaining = m?.remaining_days;
+    if (remaining !== 0 || !endDate) {
+      setCountdownText(null);
+      return;
+    }
+    const update = () => setCountdownText(getMembershipCountdown(endDate));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [data.membership?.end_date, data.membership?.remaining_days]);
 
   useEffect(() => {
     if (!id) return;
@@ -220,7 +236,7 @@ export default function UserDetailPage() {
     return (
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
         <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#c9a962] border-t-transparent" />
           <p className="mt-3">กำลังโหลด...</p>
         </div>
       </div>
@@ -231,7 +247,7 @@ export default function UserDetailPage() {
     return (
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <p className="text-red-600">{error || 'ไม่พบผู้ใช้'}</p>
-        <Link href="/cms/users" className="mt-4 inline-block text-violet-700 hover:underline">
+        <Link href="/cms/users" className="mt-4 inline-block text-[#b8960c] hover:underline">
           ← กลับไปรายการลูกค้า
         </Link>
       </div>
@@ -243,7 +259,7 @@ export default function UserDetailPage() {
       <div>
         <Link
           href="/cms/users"
-          className="inline-flex items-center text-slate-600 hover:text-violet-700"
+          className="inline-flex items-center text-slate-600 hover:text-[#b8960c]"
         >
           ← รายการลูกค้า
         </Link>
@@ -265,7 +281,7 @@ export default function UserDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                 onClick={() => setActive(user.id, true)}
               >
                 เปิดการใช้งาน
@@ -351,7 +367,11 @@ export default function UserDetailPage() {
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">แพ็กเกจที่ใช้</p>
-            <p className="text-slate-800">{membership?.package_name || membership?.membership_type || '-'}</p>
+            <p className="text-slate-800">
+              {membership?.status === 'expired' || membership?.package_id == null
+                ? 'ไม่มีแพ็กเกจ'
+                : (membership?.package_name || membership?.membership_type || '-')}
+            </p>
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">วันหมดอายุ</p>
@@ -363,6 +383,7 @@ export default function UserDetailPage() {
             <p className="text-xs font-medium uppercase tracking-wider text-slate-400">จำนวนวันคงเหลือ</p>
             <p className="text-slate-800">
               {membership?.remaining_days != null ? `${membership.remaining_days} วัน` : '-'}
+              {countdownText && <span className="ml-1 block text-xs text-amber-600">{countdownText}</span>}
             </p>
           </div>
           <div>
@@ -407,7 +428,7 @@ export default function UserDetailPage() {
                       <td className="border-b border-gray-200 px-3 py-2">{i + 1}</td>
                       <td className="border-b border-gray-200 px-3 py-2">
                         {typeLabel}
-                        {ch.is_default && <span className="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700">หลัก</span>}
+                        {ch.is_default && <span className="ml-1 rounded bg-[#c9a962]/15 px-1.5 py-0.5 text-xs text-[#b8960c]">หลัก</span>}
                       </td>
                       <td className="border-b border-gray-200 px-3 py-2">{ch.full_name || '-'}</td>
                       <td className="border-b border-gray-200 px-3 py-2 text-sm">{detail}</td>
@@ -434,7 +455,7 @@ export default function UserDetailPage() {
                   type="date"
                   value={editForm.end_date}
                   onChange={(e) => setEditForm((f) => ({ ...f, end_date: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-1 focus:ring-[#c9a962]"
                 />
               </div>
               <div>
@@ -442,7 +463,7 @@ export default function UserDetailPage() {
                 <select
                   value={editForm.package_id}
                   onChange={(e) => setEditForm((f) => ({ ...f, package_id: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-1 focus:ring-[#c9a962]"
                 >
                   <option value="">-- เลือกแพ็กเกจ --</option>
                   <option value="NO_PACKAGE">ยังไม่ได้สมัครแพ็กเกจ</option>
@@ -470,7 +491,7 @@ export default function UserDetailPage() {
               </button>
               <button
                 type="button"
-                className="rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:opacity-50"
+                className="rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c] disabled:opacity-50"
                 onClick={saveMembership}
                 disabled={savingMembership}
               >
@@ -517,7 +538,7 @@ export default function UserDetailPage() {
                               setTimeout(() => setCopiedCardId(null), 2000);
                             });
                           }}
-                          className="text-violet-600 hover:underline"
+                          className="text-[#b8960c] hover:underline"
                         >
                           {copiedCardId === c.id ? 'คัดลอกแล้ว' : 'คัดลอก'}
                         </button>
@@ -564,7 +585,7 @@ export default function UserDetailPage() {
                       </td>
                       <td className="border-b border-gray-200 px-3 py-2">
                         {pp.slip_image_url ? (
-                          <a href={pp.slip_image_url.startsWith('http') ? pp.slip_image_url : (typeof window !== 'undefined' ? window.location.origin : '') + pp.slip_image_url} target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:underline">ดูสลิป</a>
+                          <a href={pp.slip_image_url.startsWith('http') ? pp.slip_image_url : (typeof window !== 'undefined' ? window.location.origin : '') + pp.slip_image_url} target="_blank" rel="noopener noreferrer" className="text-[#b8960c] hover:underline">ดูสลิป</a>
                         ) : (
                           <span className="text-slate-400">ยังไม่แนบ</span>
                         )}

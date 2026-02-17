@@ -5,7 +5,7 @@ import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
 const formControl =
-  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20';
+  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20';
 
 export default function PackagesContent() {
   const [alert, showAlert] = useCmsAlert();
@@ -183,7 +183,7 @@ export default function PackagesContent() {
           <span>รายการแพ็กเกจ</span>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-800"
+            className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-3 py-1.5 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
             onClick={openAdd}
           >
             + เพิ่มแพ็กเกจ
@@ -197,7 +197,7 @@ export default function PackagesContent() {
               <p className="m-0 mb-4">ยังไม่มีแพ็กเกจ</p>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800"
+                className="inline-flex items-center justify-center rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]"
                 onClick={openAdd}
               >
                 เพิ่มแพ็กเกจ
@@ -367,7 +367,7 @@ export default function PackagesContent() {
               )}
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" className="rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300" onClick={() => setModalOpen(false)}>ยกเลิก</button>
-                <button type="button" className="rounded-md bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800" onClick={save}>บันทึก</button>
+                <button type="button" className="rounded-md bg-[#c9a962] px-4 py-2 text-sm font-medium text-[#0c1222] hover:bg-[#b8960c]" onClick={save}>บันทึก</button>
               </div>
             </div>
           </div>

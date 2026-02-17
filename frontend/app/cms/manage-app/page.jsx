@@ -36,8 +36,8 @@ function ManageAppContent() {
               i < TABS.length - 1 ? 'border-r border-gray-200' : ''
             } ${
               currentTab === t.id
-                ? 'bg-[#EFE8F9] text-[#6F42C1]'
-                : 'bg-white text-[#6C757D] hover:bg-gray-50'
+                ? 'bg-[#c9a962]/15 text-[#b8960c] border-b-2 border-[#c9a962]'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
             }`}
           >
             {t.label}

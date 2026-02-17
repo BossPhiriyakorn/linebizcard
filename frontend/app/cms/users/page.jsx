@@ -13,15 +13,20 @@ const glassCard = {
 };
 
 function StatCard({ icon, value, label }) {
+  const isImg = typeof icon === 'string' && icon.endsWith('.png');
   return (
     <div
       className="relative flex min-w-0 flex-col rounded-2xl p-5 shadow-md md:p-6"
       style={glassCard}
     >
-      <div className="mb-3 flex items-center justify-center rounded-xl bg-violet-100 text-2xl w-11 h-11">
-        {icon}
+      <div className="mb-3 flex h-11 w-11 items-center justify-center">
+        {isImg ? (
+          <img src={`/assets/icons/${icon}`} alt="" className="h-8 w-8 object-contain" />
+        ) : (
+          <span className="text-2xl">{icon}</span>
+        )}
       </div>
-      <div className="text-2xl font-bold text-violet-700 md:text-3xl">{value}</div>
+      <div className="text-2xl font-bold text-[#b8960c] md:text-3xl">{value}</div>
       <div className="mt-1 text-sm text-slate-500">{label}</div>
     </div>
   );
@@ -115,10 +120,10 @@ export default function UsersPage() {
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon="👥" value={stats.total_users} label="จำนวนผู้ใช้ทั้งหมด" />
-        <StatCard icon="✅" value={stats.verified_users} label="ยืนยันตัวตนแล้ว" />
-        <StatCard icon="⏳" value={stats.pending_transfer_count} label="รอตรวจสอบยอดโอน" />
-        <StatCard icon="🚫" value={stats.suspended_users} label="ผู้ใช้โดนระงับ" />
+        <StatCard icon="team.png" value={stats.total_users} label="จำนวนผู้ใช้ทั้งหมด" />
+        <StatCard icon="verified.png" value={stats.verified_users} label="ยืนยันตัวตนแล้ว" />
+        <StatCard icon="hourglass.png" value={stats.pending_transfer_count} label="รอตรวจสอบยอดโอน" />
+        <StatCard icon="prohibition.png" value={stats.suspended_users} label="ผู้ใช้โดนระงับ" />
       </div>
 
       <div className="mb-6 rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -133,7 +138,7 @@ export default function UsersPage() {
                 placeholder="ค้นหาชื่อผู้ใช้, อีเมล, เบอร์โทร..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full min-w-[200px] rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20 sm:w-auto"
+                className="w-full min-w-[200px] rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20 sm:w-auto"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -141,7 +146,7 @@ export default function UsersPage() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-700/20"
+                className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               >
                 <option value="all">ทั้งหมด</option>
                 <option value="active">ใช้งาน</option>

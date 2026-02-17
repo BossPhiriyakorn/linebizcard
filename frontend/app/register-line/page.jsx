@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CustomerAppBar from '../components/CustomerAppBar';
+import AlertBanner from '../components/AlertBanner';
 
 function getToken() {
   return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -21,6 +22,7 @@ function RegisterLineContent() {
   const [form, setForm] = useState({ first_name: '', last_name: '', nickname: '', phone: '', email: '', accepted_privacy_policy: false, accepted_terms: false });
   const [consentDocs, setConsentDocs] = useState({ privacy_policy: '', terms_of_service: '' });
   const [alert, setAlert] = useState({ show: false, msg: '', type: 'error' });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [consentLoading, setConsentLoading] = useState(true);
   const [consentModal, setConsentModal] = useState({ open: false, type: null });
@@ -71,6 +73,7 @@ function RegisterLineContent() {
     } else if (consentModal.type === 'terms') {
       setForm((f) => ({ ...f, accepted_terms: true }));
     }
+    setFieldErrors((p) => ({ ...p, consent: '' }));
     closeConsentModal();
   };
 
@@ -88,16 +91,14 @@ function RegisterLineContent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.first_name?.trim() || !form.last_name?.trim()) {
-      setAlert({ show: true, msg: 'กรุณากรอกชื่อและนามสกุล', type: 'error' });
-      return;
-    }
-    if (!form.phone?.trim()) {
-      setAlert({ show: true, msg: 'กรุณากรอกเบอร์โทรศัพท์', type: 'error' });
-      return;
-    }
-    if (!form.accepted_privacy_policy || !form.accepted_terms) {
-      setAlert({ show: true, msg: 'กรุณาอ่านและยอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้บริการ', type: 'error' });
+    const err = {};
+    if (!form.first_name?.trim()) err.first_name = 'กรุณากรอกชื่อ';
+    if (!form.last_name?.trim()) err.last_name = 'กรุณากรอกนามสกุล';
+    if (!form.phone?.trim()) err.phone = 'กรุณากรอกเบอร์โทรศัพท์';
+    if (!form.accepted_privacy_policy || !form.accepted_terms) err.consent = 'กรุณาอ่านและยอมรับนโยบายความเป็นส่วนตัวและข้อกำหนดการใช้บริการ';
+    setFieldErrors(err);
+    if (Object.keys(err).length > 0) {
+      setAlert({ show: true, msg: 'กรุณากรอกข้อมูลให้ครบและยอมรับข้อกำหนด', type: 'error' });
       return;
     }
     setLoading(true);
@@ -130,33 +131,32 @@ function RegisterLineContent() {
           <p className="m-0">✅ คุณได้เข้าสู่ระบบด้วย LINE แล้ว</p>
           <p className="mt-1 text-sm opacity-90">กรุณากรอกข้อมูลเพิ่มเติมเพื่อเริ่มใช้งาน</p>
         </div>
-        {alert.show && (
-          <div
-            className={`mb-5 rounded-lg px-5 py-3.5 ${
-              alert.type === 'error'
-                ? 'border border-red-200 bg-red-50 text-red-800'
-                : 'border border-green-200 bg-green-50 text-green-800'
-            }`}
-          >
-            {alert.msg}
-          </div>
-        )}
+        <AlertBanner
+          show={alert.show}
+          msg={alert.msg}
+          type={alert.type}
+          onClose={() => setAlert((a) => ({ ...a, show: false }))}
+          autoCloseMs={alert.type === 'success' ? 0 : 0}
+        />
         <form onSubmit={handleSubmit}>
           <div className="mb-5">
-            <label className={labelClass}>ชื่อ *</label>
-            <input type="text" required placeholder="กรอกชื่อ" value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} className={inputClass} />
+            <label className={labelClass}>ชื่อ <span className="text-red-600" aria-hidden="true">*</span></label>
+            <input type="text" required placeholder="กรอกชื่อ" value={form.first_name} onChange={(e) => { setForm((f) => ({ ...f, first_name: e.target.value })); setFieldErrors((p) => ({ ...p, first_name: '' })); }} className={inputClass} />
+            {fieldErrors.first_name && <p className="mt-1 text-sm text-red-600">{fieldErrors.first_name}</p>}
           </div>
           <div className="mb-5">
-            <label className={labelClass}>นามสกุล *</label>
-            <input type="text" required placeholder="กรอกนามสกุล" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} className={inputClass} />
+            <label className={labelClass}>นามสกุล <span className="text-red-600" aria-hidden="true">*</span></label>
+            <input type="text" required placeholder="กรอกนามสกุล" value={form.last_name} onChange={(e) => { setForm((f) => ({ ...f, last_name: e.target.value })); setFieldErrors((p) => ({ ...p, last_name: '' })); }} className={inputClass} />
+            {fieldErrors.last_name && <p className="mt-1 text-sm text-red-600">{fieldErrors.last_name}</p>}
           </div>
           <div className="mb-5">
             <label className={labelClass}>ชื่อเล่น</label>
             <input type="text" placeholder="ชื่อเล่น (ไม่บังคับ)" value={form.nickname} onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))} className={inputClass} />
           </div>
           <div className="mb-5">
-            <label className={labelClass}>เบอร์โทร *</label>
-            <input type="tel" placeholder="เบอร์โทรศัพท์" maxLength={10} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className={inputClass} />
+            <label className={labelClass}>เบอร์โทร <span className="text-red-600" aria-hidden="true">*</span></label>
+            <input type="tel" placeholder="0812345678" maxLength={10} value={form.phone} onChange={(e) => { setForm((f) => ({ ...f, phone: e.target.value })); setFieldErrors((p) => ({ ...p, phone: '' })); }} className={inputClass} />
+            {fieldErrors.phone && <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>}
           </div>
           <div className="mb-5">
             <label className={labelClass}>อีเมล</label>
@@ -202,6 +202,7 @@ function RegisterLineContent() {
                 </div>
               </>
             )}
+            {fieldErrors.consent && <p className="mt-1 text-sm text-red-600">{fieldErrors.consent}</p>}
           </div>
 
           {/* โมดัลอ่านเนื้อหา — เลื่อนลงล่างสุดแล้วกดยินยอมถึงติ๊กถูก */}

@@ -369,10 +369,10 @@ line_flex_tem/
 │   └── uniqueId.js             # Unique ID Generator
 │
 ├── database/                   # Database Files
-│   ├── schema-full.sql         # Complete Database Schema
-│   ├── add-drive-columns.sql   # Migration: Google Drive Columns
-│   ├── fix-free-package-requires-payment.sql  # Migration: Free Package Fix
-│   └── delete-users-and-cards.sql  # Utility: Delete Test Data
+│   ├── schema-full.sql         # Complete Database Schema (รันผ่าน scripts/setup-database.js)
+│   ├── fix-free-package-requires-payment.sql  # แก้ข้อมูล: แพ็กเกจฟรีไม่บังคับช่องทางชำระ
+│   ├── add-custom-card-template.sql  # เพิ่มข้อมูล: Template "ออกแบบเอง" (มีใน schema-full แล้ว)
+│   └── delete-users-and-cards.sql  # Utility: ลบข้อมูลทดสอบ
 │
 ├── scripts/                    # Utility Scripts
 │   ├── setup-database.js       # Database Setup Script
@@ -609,142 +609,13 @@ line_flex_tem/
 - 🔒 = ต้องมี JWT Token (ผู้ใช้ทั่วไป)
 - 👑 = ต้องมี Admin Token (แอดมิน CMS)
 
-## 🗄️ Database Schema Overview
+## 🗄️ Database
 
-### ตารางหลัก (Main Tables)
+โครงสร้างฐานข้อมูลใช้ตารางหลัก เช่น `users`, `memberships`, `packages`, `templates`, `user_cards`, `admins`, `login_logs`, `cms_settings`, `cms_notifications`, `email_verifications`, `coupons`, `coupon_redemptions`, `payment_history`, `payment_channels`, `pending_payments` และตารางที่เกี่ยวข้องอื่นๆ
 
-#### users - ผู้ใช้งาน
-เก็บข้อมูลผู้ใช้ที่เข้าสู่ระบบผ่าน LINE
-```sql
-- id (SERIAL PRIMARY KEY)
-- line_user_id (VARCHAR UNIQUE) - LINE User ID
-- display_name (VARCHAR) - ชื่อที่แสดง
-- picture_url (TEXT) - URL รูปโปรไฟล์
-- email (VARCHAR)
-- phone (VARCHAR)
-- role (VARCHAR) - customer, admin, super_admin
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### templates - Template การ์ด
-เก็บ Template สำหรับสร้าง Flex Message
-```sql
-- id (SERIAL PRIMARY KEY)
-- name (VARCHAR) - ชื่อ Template
-- description (TEXT)
-- flex_structure (JSONB) - โครงสร้าง Flex Message
-- preview_url (TEXT) - URL รูป Preview
-- category (VARCHAR) - business, personal, creative
-- is_active (BOOLEAN)
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### cards - การ์ดที่สร้าง
-เก็บข้อมูลการ์ดที่ผู้ใช้สร้าง
-```sql
-- id (SERIAL PRIMARY KEY)
-- user_id (INTEGER FK → users.id)
-- template_id (INTEGER FK → templates.id)
-- name, phone, email, company, position, website, address
-- image_url (TEXT) - URL รูปภาพ
-- flex_message (JSONB) - Flex Message JSON
-- liff_url (TEXT) - LIFF URL สำหรับแชร์
-- share_count, view_count (INTEGER)
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### packages - แพ็กเกจ
-เก็บข้อมูลแพ็กเกจที่มีขาย
-```sql
-- id (SERIAL PRIMARY KEY)
-- name (VARCHAR) - Free, Basic, Premium
-- description (TEXT)
-- price (DECIMAL) - ราคา
-- card_limit (INTEGER) - จำนวนการ์ดที่สร้างได้
-- duration_days (INTEGER) - ระยะเวลา (วัน)
-- features (JSONB) - ฟีเจอร์เพิ่มเติม
-- is_active (BOOLEAN)
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### user_packages - แพ็กเกจของผู้ใช้
-เก็บข้อมูลแพ็กเกจที่ผู้ใช้ซื้อ
-```sql
-- id (SERIAL PRIMARY KEY)
-- user_id (INTEGER FK → users.id)
-- package_id (INTEGER FK → packages.id)
-- cards_remaining (INTEGER) - จำนวนการ์ดที่เหลือ
-- expires_at (TIMESTAMP) - วันหมดอายุ
-- is_active (BOOLEAN)
-- purchased_at, created_at (TIMESTAMP)
-```
-
-#### payments - การชำระเงิน
-เก็บประวัติการชำระเงิน
-```sql
-- id (SERIAL PRIMARY KEY)
-- user_id (INTEGER FK → users.id)
-- package_id (INTEGER FK → packages.id)
-- amount (DECIMAL) - จำนวนเงิน
-- payment_method (VARCHAR) - stripe, qr_slip, linepay
-- status (VARCHAR) - pending, completed, failed, cancelled
-- transaction_id (VARCHAR) - Transaction ID จาก Gateway
-- stripe_payment_intent_id (VARCHAR)
-- linepay_transaction_id (VARCHAR)
-- metadata (JSONB)
-- verified_by (INTEGER) - รหัสแอดมินที่ตรวจสอบ
-- verified_at (TIMESTAMP)
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### payment_slips - สลิปการชำระเงิน
-เก็บข้อมูลสลิปที่อัพโหลด (สำหรับ QR+สลิป)
-```sql
-- id (SERIAL PRIMARY KEY)
-- payment_id (INTEGER FK → payments.id)
-- slip_image_url (TEXT) - URL รูปสลิป
-- uploaded_at (TIMESTAMP)
-```
-
-#### admins - แอดมิน CMS
-เก็บข้อมูลแอดมินที่เข้าสู่ระบบ CMS
-```sql
-- id (SERIAL PRIMARY KEY)
-- username (VARCHAR UNIQUE)
-- password_hash (VARCHAR) - bcrypt hash
-- full_name (VARCHAR)
-- email (VARCHAR UNIQUE)
-- role (VARCHAR) - admin, super_admin
-- is_active (BOOLEAN)
-- last_login_at (TIMESTAMP)
-- created_at, updated_at (TIMESTAMP)
-```
-
-#### coupons - คูปองส่วนลด
-เก็บข้อมูลคูปองส่วนลด
-```sql
-- id (SERIAL PRIMARY KEY)
-- code (VARCHAR UNIQUE) - รหัสคูปอง
-- discount_type (VARCHAR) - percentage, fixed
-- discount_value (DECIMAL) - ค่าส่วนลด
-- min_purchase (DECIMAL) - ยอดซื้อขั้นต่ำ
-- max_uses (INTEGER) - จำนวนครั้งที่ใช้ได้
-- used_count (INTEGER) - จำนวนครั้งที่ใช้แล้ว
-- expires_at (TIMESTAMP)
-- is_active (BOOLEAN)
-- created_at (TIMESTAMP)
-```
-
-### ความสัมพันธ์ระหว่างตาราง (Relationships)
-- **users → cards** (1:N) - ผู้ใช้หนึ่งคนสร้างได้หลายการ์ด
-- **templates → cards** (1:N) - Template หนึ่งตัวใช้ได้หลายการ์ด
-- **users → user_packages** (1:N) - ผู้ใช้หนึ่งคนมีได้หลายแพ็กเกจ
-- **packages → user_packages** (1:N) - แพ็กเกจหนึ่งตัวถูกซื้อได้หลายครั้ง
-- **users → payments** (1:N) - ผู้ใช้หนึ่งคนชำระเงินได้หลายครั้ง
-- **packages → payments** (1:N) - แพ็กเกจหนึ่งตัวมีการชำระเงินได้หลายครั้ง
-- **payments → payment_slips** (1:1) - การชำระเงินหนึ่งครั้งมีสลิปหนึ่งใบ
-
-**ดูรายละเอียดเพิ่มเติม:** `database/schema-full.sql`
+**สร้าง/อัปเดต schema ทั้งหมด:** รัน `node scripts/setup-database.js` (โหลด `database/schema-full.sql`)  
+- สร้าง DB ครั้งแรก: รัน `node scripts/create-database.js` ก่อน แล้วตามด้วย `node scripts/setup-database.js`  
+- รายละเอียดตารางและคอลัมน์ครบถ้วนดูใน **[database/schema-full.sql](./database/schema-full.sql)**
 
 ## 🎯 วิธีใช้งาน
 

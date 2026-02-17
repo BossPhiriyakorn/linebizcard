@@ -26,7 +26,7 @@ export default function CmsRootLayout({ children }) {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-slate-100 text-slate-500" data-cms aria-busy="true" style={{ minHeight: '100vh', background: '#f1f5f9' }}>
+      <div className="flex min-h-screen w-full items-center justify-center text-slate-600" data-cms aria-busy="true" style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #f8f6f0 0%, #eee9e0 50%, #f1f5f9 100%)' }}>
         <p className="m-0">กำลังตรวจสอบ...</p>
       </div>
     );
