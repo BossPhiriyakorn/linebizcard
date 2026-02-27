@@ -47,6 +47,15 @@ body:has([data-cms]) {
   font-size: 14px;
 }
 
+/* Input/textarea: ตัวหนังสือและ placeholder ไม่กลืนกับพื้นหลัง (พื้นขาว/เทาอ่อน) */
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
+}
+input, textarea {
+  color: #1e293b;
+}
+
 /* Skeleton loading animation (customer cards) */
 @keyframes skeleton-shine {
   0% { background-position: 200% 0; }

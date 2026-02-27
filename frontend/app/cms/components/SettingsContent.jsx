@@ -149,7 +149,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">นโยบายความเป็นส่วนตัว (Privacy Policy)</label>
             <textarea
               rows={6}
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="กรอกเนื้อหานโยบายความเป็นส่วนตัวที่ลูกค้าต้องอ่านและยอมรับ..."
               value={form.privacy_policy_content}
               onChange={(e) => setForm((f) => ({ ...f, privacy_policy_content: e.target.value }))}
@@ -159,7 +159,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">ข้อกำหนดการใช้บริการ (Terms of Service)</label>
             <textarea
               rows={6}
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="กรอกเนื้อหาข้อกำหนดการใช้บริการที่ลูกค้าต้องอ่านและยอมรับ..."
               value={form.terms_of_service_content}
               onChange={(e) => setForm((f) => ({ ...f, terms_of_service_content: e.target.value }))}
@@ -189,7 +189,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">ลิงค์ช่องทางติดต่อออกแบบ</label>
             <input
               type="url"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="https://line.me/ti/p/... หรือ https://..."
               value={form.contact_design_url}
               onChange={(e) => setForm((f) => ({ ...f, contact_design_url: e.target.value }))}
@@ -220,7 +220,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">ชื่อธนาคาร</label>
             <input
               type="text"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="เช่น ธนาคารกสิกรไทย"
               value={form.qr_payment_bank_name}
               onChange={(e) => setForm((f) => ({ ...f, qr_payment_bank_name: e.target.value }))}
@@ -230,7 +230,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">เลขบัญชี</label>
             <input
               type="text"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="xxx-x-xxxxx-x"
               value={form.qr_payment_account_no}
               onChange={(e) => setForm((f) => ({ ...f, qr_payment_account_no: e.target.value }))}
@@ -240,7 +240,7 @@ export default function SettingsContent() {
             <label className="mb-1.5 block font-medium text-gray-800">ชื่อบัญชี</label>
             <input
               type="text"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20"
               placeholder="ชื่อที่แสดงบนบัญชี"
               value={form.qr_payment_account_name}
               onChange={(e) => setForm((f) => ({ ...f, qr_payment_account_name: e.target.value }))}

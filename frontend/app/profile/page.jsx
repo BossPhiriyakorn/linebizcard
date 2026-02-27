@@ -14,7 +14,7 @@ const token = () => (typeof window !== 'undefined' ? localStorage.getItem('token
 const headers = () => ({ Authorization: 'Bearer ' + token() });
 
 const inputClass =
-  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/20';
+  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base text-slate-800 placeholder:text-slate-500 transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/20';
 const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
 
 function CardChannelForm({ fullName, setFullName, saving, onSuccess, onCancel, labelClass: lc, inputClass: ic }) {

@@ -8,7 +8,7 @@ import AlertBanner from '../components/AlertBanner';
 import { getToken, getHeaders, handleAuthResponse } from '../utils/auth';
 
 const inputClass =
-  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/15';
+  'w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-base text-slate-800 placeholder:text-slate-500 transition-all focus:border-[#c9a962] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#c9a962]/15';
 const labelClass = 'mb-2 block text-sm font-medium text-gray-800';
 const sectionTitleClass =
   'mb-3 flex items-center gap-2.5 border-b-2 border-[#c9a962] pb-2.5 text-lg font-bold text-[#c9a962]';

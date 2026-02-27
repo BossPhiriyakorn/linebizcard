@@ -5,7 +5,7 @@ import { getCmsHeaders, handleCmsResponse } from '../cmsApi';
 import { useCmsAlert } from '../hooks/useCmsAlert';
 
 const formControl =
-  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20';
+  'w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20';
 
 function formatDate(val) {
   if (!val) return '-';

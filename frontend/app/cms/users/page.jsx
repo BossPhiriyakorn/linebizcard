@@ -138,7 +138,7 @@ export default function UsersPage() {
                 placeholder="ค้นหาชื่อผู้ใช้, อีเมล, เบอร์โทร..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full min-w-[200px] rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20 sm:w-auto"
+                className="w-full min-w-[200px] rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none focus:ring-2 focus:ring-[#c9a962]/20 sm:w-auto"
               />
             </div>
             <div className="flex items-center gap-2">

@@ -231,7 +231,7 @@ function PaymentSummaryContent() {
               placeholder="กรอกรหัสคูปอง"
               value={couponCode}
               onChange={(e) => { setCouponCode(e.target.value); setCouponResult(null); }}
-              className="flex-1 rounded-lg border-2 border-gray-200 px-4 py-2.5 focus:border-[#c9a962] focus:outline-none"
+              className="flex-1 rounded-lg border-2 border-gray-200 bg-white px-4 py-2.5 text-slate-800 placeholder:text-slate-500 focus:border-[#c9a962] focus:outline-none"
             />
             <button
               type="button"

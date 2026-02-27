@@ -181,7 +181,7 @@ export default function VerifyEmailPage() {
               placeholder="กรอกรหัสจากอีเมล"
               value={otpCode}
               onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-center text-lg tracking-widest focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15"
+              className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-center text-lg text-slate-800 placeholder:text-slate-500 tracking-widest focus:border-[#1DB446] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#1DB446]/15"
             />
           </div>
 
