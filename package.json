@@ -10,7 +10,7 @@
   "scripts": {
     "start": "cross-env NODE_ENV=production NODE_OPTIONS=--no-deprecation node server.js",
     "dev": "cross-env NODE_OPTIONS=--no-deprecation nodemon server.js",
-    "install:all": "npm install",
+    "install:all": "cross-env NODE_OPTIONS=--max-old-space-size=512 npm install",
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=1536 npm run build -w frontend",
     "build:clean": "node scripts/clean-build.js",
     "build:frontend": "cross-env NODE_OPTIONS=--max-old-space-size=1536 npm run build -w frontend"

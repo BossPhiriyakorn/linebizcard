@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/pay-by-qr/layout,_N_T_/pay-by-qr/page,_N_T_/pay-by-qr"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/pay-by-qr/__PAGE__",
+    "/pay-by-qr",
+    "/_index",
+    "/_head"
+  ]
+}

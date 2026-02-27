@@ -1,0 +1,35 @@
+{
+  "..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {
+    "id": 5310,
+    "files": [
+      "static/chunks/vendor-0550a3924610ff87.js"
+    ]
+  },
+  "..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_error": {
+    "id": 6555,
+    "files": [
+      "static/chunks/vendor-0550a3924610ff87.js"
+    ]
+  },
+  "app\\cms\\manage-app\\page.jsx -> ../components/CouponsContent": {
+    "id": 8461,
+    "files": [
+      "static/chunks/common.33cfb0d7acb7bb38.js",
+      "static/chunks/461.70b723948ca0a7c3.js"
+    ]
+  },
+  "app\\cms\\manage-app\\page.jsx -> ../components/PackagesContent": {
+    "id": 5741,
+    "files": [
+      "static/chunks/common.33cfb0d7acb7bb38.js",
+      "static/chunks/741.2efd880ab2159b32.js"
+    ]
+  },
+  "app\\cms\\manage-app\\page.jsx -> ../components/SettingsContent": {
+    "id": 9477,
+    "files": [
+      "static/chunks/common.33cfb0d7acb7bb38.js",
+      "static/chunks/477.ee960462d2420e11.js"
+    ]
+  }
+}

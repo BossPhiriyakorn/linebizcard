@@ -1,0 +1,247 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    },
+    {
+      "source": "/login",
+      "destination": "/liff/login",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/login(?:/)?$"
+    },
+    {
+      "source": "/register",
+      "destination": "/liff/login",
+      "statusCode": 307,
+      "regex": "^(?!/_next)/register(?:/)?$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/cms/users/[id]",
+      "regex": "^/cms/users/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/cms/users/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/edit-card/[id]",
+      "regex": "^/edit\\-card/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/edit\\-card/(?<nxtPid>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/choose-package",
+      "regex": "^/choose\\-package(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/choose\\-package(?:/)?$"
+    },
+    {
+      "page": "/cms",
+      "regex": "^/cms(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms(?:/)?$"
+    },
+    {
+      "page": "/cms/admins",
+      "regex": "^/cms/admins(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/admins(?:/)?$"
+    },
+    {
+      "page": "/cms/coupons",
+      "regex": "^/cms/coupons(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/coupons(?:/)?$"
+    },
+    {
+      "page": "/cms/login",
+      "regex": "^/cms/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/login(?:/)?$"
+    },
+    {
+      "page": "/cms/login-history",
+      "regex": "^/cms/login\\-history(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/login\\-history(?:/)?$"
+    },
+    {
+      "page": "/cms/logout",
+      "regex": "^/cms/logout(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/logout(?:/)?$"
+    },
+    {
+      "page": "/cms/manage-app",
+      "regex": "^/cms/manage\\-app(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/manage\\-app(?:/)?$"
+    },
+    {
+      "page": "/cms/packages",
+      "regex": "^/cms/packages(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/packages(?:/)?$"
+    },
+    {
+      "page": "/cms/payments",
+      "regex": "^/cms/payments(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/payments(?:/)?$"
+    },
+    {
+      "page": "/cms/settings",
+      "regex": "^/cms/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/settings(?:/)?$"
+    },
+    {
+      "page": "/cms/templates",
+      "regex": "^/cms/templates(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/templates(?:/)?$"
+    },
+    {
+      "page": "/cms/users",
+      "regex": "^/cms/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cms/users(?:/)?$"
+    },
+    {
+      "page": "/coupon",
+      "regex": "^/coupon(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/coupon(?:/)?$"
+    },
+    {
+      "page": "/create",
+      "regex": "^/create(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/create(?:/)?$"
+    },
+    {
+      "page": "/create-custom",
+      "regex": "^/create\\-custom(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/create\\-custom(?:/)?$"
+    },
+    {
+      "page": "/home",
+      "regex": "^/home(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/home(?:/)?$"
+    },
+    {
+      "page": "/liff/login",
+      "regex": "^/liff/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/liff/login(?:/)?$"
+    },
+    {
+      "page": "/my-cards",
+      "regex": "^/my\\-cards(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/my\\-cards(?:/)?$"
+    },
+    {
+      "page": "/package",
+      "regex": "^/package(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/package(?:/)?$"
+    },
+    {
+      "page": "/pay-by-qr",
+      "regex": "^/pay\\-by\\-qr(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pay\\-by\\-qr(?:/)?$"
+    },
+    {
+      "page": "/payment-summary",
+      "regex": "^/payment\\-summary(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/payment\\-summary(?:/)?$"
+    },
+    {
+      "page": "/profile",
+      "regex": "^/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/profile(?:/)?$"
+    },
+    {
+      "page": "/register-line",
+      "regex": "^/register\\-line(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register\\-line(?:/)?$"
+    },
+    {
+      "page": "/share",
+      "regex": "^/share(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/share(?:/)?$"
+    },
+    {
+      "page": "/verify-email",
+      "regex": "^/verify\\-email(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/verify\\-email(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

@@ -26,8 +26,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Build
+# Build (ไม่ ignore frontend/.next — บิ้วบนเครื่องแล้ว push ขึ้น Git เพื่อไม่ต้อง build บนเซิร์ฟเวอร์)
 dist/
 build/
-frontend/.next/
+# frontend/.next/   ← เปิดให้ commit ผล build ได้
 frontend/out/

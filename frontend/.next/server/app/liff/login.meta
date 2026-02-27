@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/liff/layout,_N_T_/liff/login/layout,_N_T_/liff/login/page,_N_T_/liff/login"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/liff/login/__PAGE__",
+    "/liff/login",
+    "/liff",
+    "/_index",
+    "/_head"
+  ]
+}
